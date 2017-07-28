@@ -15,18 +15,9 @@
  * functions may still be available if you return an older API version
  * in GetAPIVersion() in info.nut.
  *
- * \b 1.3.3
+ * \b 1.4.0
  *
- * No changes
- *
- * \b 1.3.2
- *
- * No changes
- *
- * \b 1.3.1
- *
- * API additions:
- * \li AITile::GetTerrainType
+ * 1.4.0 is not yet released. The following changes are not set in stone yet.
  *
  * \b 1.3.0
  *

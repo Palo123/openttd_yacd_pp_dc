@@ -74,6 +74,19 @@ public:
 
 	CargoPacket *Split(uint new_size);
 	void Merge(CargoPacket *cp);
+	void Reduce(uint count);
+
+	/**
+	 * Sets the tile where the packet was loaded last.
+	 * @param load_place Tile where the packet was loaded last.
+	 */
+	void SetLoadPlace(TileIndex load_place) { this->loaded_at_xy = load_place; }
+
+	/**
+	 * Adds some feeder share to the packet.
+	 * @param new_share Feeder share to be added.
+	 */
+	void AddFeederShare(Money new_share) { this->feeder_share += new_share; }
 
 	/**
 	 * Gets the number of 'items' in this packet.
@@ -92,6 +105,17 @@ public:
 	inline Money FeederShare() const
 	{
 		return this->feeder_share;
+	}
+
+	/**
+	 * Gets part of the amount of money already paid to earlier vehicles in
+	 * the feeder chain.
+	 * @param part Amount of cargo to get the share for.
+	 * @return Feeder share for the given amount of cargo.
+	 */
+	inline Money FeederShare(uint part) const
+	{
+		return this->feeder_share * part / static_cast<uint>(this->count);
 	}
 
 	/**
@@ -233,8 +257,12 @@ public:
 	typedef std::list<CargoPacket *> List;
 	/** The iterator for our container. */
 	typedef List::iterator Iterator;
+	/** The reverse iterator for our container. */
+	typedef List::reverse_iterator ReverseIterator;
 	/** The const iterator for our container. */
 	typedef List::const_iterator ConstIterator;
+	/** The const reverse iterator for our container. */
+	typedef List::const_reverse_iterator ConstReverseIterator;
 
 	/** Kind of actions that could be done with packets on move. */
 	enum MoveToAction {
@@ -255,7 +283,15 @@ protected:
 
 	void AddToCache(const CargoPacket *cp);
 
-	void RemoveFromCache(const CargoPacket *cp);
+	void RemoveFromCache(const CargoPacket *cp, uint count);
+
+	template<class Taction>
+	void ShiftCargo(Taction action);
+
+	template<class Taction>
+	void PopCargo(Taction action);
+
+	static bool TryMerge(CargoPacket *cp, CargoPacket *icp);
 
 	void RemoveFromCacheLocal(const CargoPacket *cp, uint amount) {}
 
@@ -317,9 +353,8 @@ public:
 		return this->count == 0 ? 0 : this->cargo_days_in_transit / this->count;
 	}
 
-
 	void Append(CargoPacket *cp);
-	void Truncate(uint max_remaining);
+	uint Truncate(uint max_move = UINT_MAX);
 
 	template <class Tother_inst>
 	bool MoveTo(Tother_inst *dest, uint count, MoveToAction mta, CargoPayment *payment, StationID st = INVALID_STATION, OrderID cur_order = INVALID_ORDER, CargoID cid = INVALID_CARGO, bool *did_transfer = NULL);
@@ -338,13 +373,19 @@ protected:
 	Money feeder_share; ///< Cache for the feeder share.
 
 	void AddToCache(const CargoPacket *cp);
-	void RemoveFromCache(const CargoPacket *cp);
+	void RemoveFromCache(const CargoPacket *cp, uint count);
 
 public:
 	/** The super class ought to know what it's doing. */
 	friend class CargoList<VehicleCargoList>;
 	/** The vehicles have a cargo list (and we want that saved). */
 	friend const struct SaveLoad *GetVehicleDescription(VehicleType vt);
+
+	friend class CargoShift;
+	friend class CargoTransfer;
+	friend class CargoDelivery;
+	template<class Tsource>
+	friend class CargoRemoval;
 
 	/**
 	 * Returns total sum of the feeder share for all packets.
@@ -399,7 +440,7 @@ protected:
 	uint32 next_start;        ///< Packet number to start the next hop update loop from.
 
 	void AddToCache(const CargoPacket *cp);
-	void RemoveFromCache(const CargoPacket *cp);
+	void RemoveFromCache(const CargoPacket *cp, uint count);
 	void RemoveFromCacheLocal(const CargoPacket *cp, uint amount);
 
 	/* virtual */ bool UpdateCargoNextHop(CargoPacket *cp, Station *st, CargoID cid);
@@ -409,6 +450,11 @@ public:
 	friend class CargoList<StationCargoList>;
 	/** The stations, via GoodsEntry, have a CargoList. */
 	friend const struct SaveLoad *GetGoodsDesc();
+	
+	friend class CargoLoad;
+	friend class CargoTransfer;
+	template<class Tsource>
+	friend class CargoRemoval;
 
 	void InvalidateCache();
 
@@ -433,7 +479,7 @@ public:
 		OrderMap::const_iterator i = this->order_cache.find(order);
 		return i != this->order_cache.end() ? i->second : 0;
 	}
-
+	
 	/**
 	 * Are two the two CargoPackets mergeable in the context of
 	 * a list of CargoPackets for a Vehicle?

@@ -156,6 +156,9 @@
     <ClCompile Include="..\src\bmp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\cargoaction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\cargodest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -457,6 +460,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\cargo_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\cargoaction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\cargodest_base.h">

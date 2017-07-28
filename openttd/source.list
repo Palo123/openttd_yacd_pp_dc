@@ -17,6 +17,7 @@ animated_tile.cpp
 articulated_vehicles.cpp
 autoreplace.cpp
 bmp.cpp
+cargoaction.cpp
 cargodest.cpp
 cargomonitor.cpp
 cargopacket.cpp
@@ -146,6 +147,7 @@ base_station_base.h
 bmp.h
 bridge.h
 cargo_type.h
+cargoaction.h
 cargodest_base.h
 cargodest_func.h
 cargodest_gui.h

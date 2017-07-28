@@ -1221,7 +1221,7 @@ CargoPayment::~CargoPayment()
 
 	this->front->cargo_payment = NULL;
 
-	if (this->visual_profit == 0 && this->transfer_profit == 0) return;
+	if (this->visual_profit == 0 && this->visual_transfer == 0) return;
 
 	Backup<CompanyByte> cur_company(_current_company, this->front->owner, FILE_LINE);
 
@@ -1232,24 +1232,19 @@ CargoPayment::~CargoPayment()
 	}
 
 	SubtractMoneyFromCompany(CommandCost(this->front->GetExpenseType(true), -this->route_profit));
-	this->front->profit_this_year += (this->visual_profit + this->transfer_profit) << 8;
-
-	int z = this->front->z_pos;
-
-	if (this->route_profit != 0) {
-		/* Show profit/loss from final delivery. */
-		ShowCostOrIncomeAnimation(this->front->x_pos, this->front->y_pos, z, -this->visual_profit);
-		z += VPSM_TOP + FONT_HEIGHT_NORMAL + VPSM_BOTTOM;
-	}
-
-	if (this->transfer_profit != 0) {
-		/* Show transfer credits. */
-		ShowFeederIncomeAnimation(this->front->x_pos, this->front->y_pos, z, this->transfer_profit);
-	}
+	this->front->profit_this_year += (this->visual_profit + this->visual_transfer) << 8;
 
 	/* Play cash sound. */
-	if ( (IsLocalCompany() && !PlayVehicleSound(this->front, VSE_LOAD_UNLOAD)) && ( _settings_client.sound.cashtill ) ) {
+	if ( (this->route_profit != 0 && IsLocalCompany() && !PlayVehicleSound(this->front, VSE_LOAD_UNLOAD)) && ( _settings_client.sound.cashtill ) ) {
 		SndPlayVehicleFx(SND_14_CASHTILL, this->front);
+	}
+	
+	if (this->visual_transfer != 0) {
+			ShowFeederIncomeAnimation(this->front->x_pos, this->front->y_pos,
+							this->front->z_pos, this->visual_transfer, -this->visual_profit);
+	} else if (this->visual_profit != 0) {
+			ShowCostOrIncomeAnimation(this->front->x_pos, this->front->y_pos,
+							this->front->z_pos, -this->visual_profit);
 	}
 
 	this->front->trip_history.AddValue(this->route_profit, _date);
@@ -1273,7 +1268,7 @@ void CargoPayment::PayFinalDelivery(const CargoPacket *cp, uint count)
 	this->route_profit += profit;
 
 	/* The vehicle's profit is whatever route profit there is minus feeder shares. */
-	this->visual_profit += profit - cp->FeederShare();
+	this->visual_profit += profit - cp->FeederShare(count);
 }
 
 /**
@@ -1293,7 +1288,7 @@ Money CargoPayment::PayTransfer(const CargoPacket *cp, uint count)
 
 	profit = profit * _settings_game.economy.feeder_payment_share / 100;
 
-	this->transfer_profit += profit; // accumulate transfer profits for whole vehicle
+	this->visual_transfer += profit; // accumulate transfer profits for whole vehicle
 	return profit; // account for the (virtual) profit already made for the cargo packet
 }
 

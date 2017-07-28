@@ -852,7 +852,7 @@ void Vehicle::PreDestructor()
 	}
 	InvalidateWindowClassesData(GetWindowClassForVehicleType(this->type), 0);
 
-	this->cargo.Truncate(0);
+	this->cargo.Truncate();
 	DeleteVehicleOrders(this);
 	DeleteDepotHighlightOfVehicle(this);
 

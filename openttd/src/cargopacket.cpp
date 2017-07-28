@@ -12,6 +12,7 @@
 #include "stdafx.h"
 #include "core/pool_func.hpp"
 #include "economy_base.h"
+#include "cargoaction.h"
 #include "station_base.h"
 #include "cargodest_func.h"
 #include "cargodest_base.h"
@@ -113,14 +114,14 @@ CargoPacket::CargoPacket(uint16 count, byte days_in_transit, StationID source, T
 
 /**
  * Split this packet in two and return the split off part.
- * @param new_size Size of the remaining part.
+ * @param new_size Size of the split part.
  * @return Split off part, or NULL if no packet could be allocated!
  */
 inline CargoPacket *CargoPacket::Split(uint new_size)
 {
 	if (!CargoPacket::CanAllocateItem()) return NULL;
 
-	Money fs = this->feeder_share * new_size / static_cast<uint>(this->count);
+	Money fs = this->FeederShare(new_size);
 	CargoPacket *cp_new = new CargoPacket(new_size, this->days_in_transit, this->source, this->source_xy, this->loaded_at_xy, fs, this->source_type, this->source_id, this->dest_xy, this->dest_type, this->dest_id, this->next_order, this->next_station, this->flags);
 	this->feeder_share -= fs;
 	this->count -= new_size;
@@ -136,6 +137,17 @@ inline void CargoPacket::Merge(CargoPacket *cp)
 	this->count += cp->count;
 	this->feeder_share += cp->feeder_share;
 	delete cp;
+}
+
+/**
+ * Reduce the packet by the given amount and remove the feeder share.
+ * @param count Amount to be removed.
+ */
+inline void CargoPacket::Reduce(uint count)
+{
+	assert(count < this->count);
+	this->feeder_share -= this->FeederShare(count);
+	this->count -= count;
 }
 
 /**
@@ -199,15 +211,17 @@ void CargoList<Tinst>::OnCleanPool()
 }
 
 /**
- * Update the cached values to reflect the removal of this packet.
+ * Update the cached values to reflect the removal of this packet or part of it.
  * Decreases count and days_in_transit.
  * @param cp Packet to be removed from cache.
+ * @param count Amount of cargo from the given packet to be removed.
  */
 template <class Tinst>
-void CargoList<Tinst>::RemoveFromCache(const CargoPacket *cp)
+void CargoList<Tinst>::RemoveFromCache(const CargoPacket *cp, uint count)
 {
-	this->count                 -= cp->count;
-	this->cargo_days_in_transit -= cp->days_in_transit * cp->count;
+	assert(count <= cp->count);
+	this->count                 -= count;
+	this->cargo_days_in_transit -= cp->days_in_transit * count;
 }
 
 /**
@@ -237,11 +251,7 @@ void CargoList<Tinst>::Append(CargoPacket *cp)
 	static_cast<Tinst *>(this)->AddToCache(cp);
 
 	for (List::reverse_iterator it(this->packets.rbegin()); it != this->packets.rend(); it++) {
-		CargoPacket *icp = *it;
-		if (Tinst::AreMergable(icp, cp) && icp->count + cp->count <= CargoPacket::MAX_COUNT) {
-			icp->Merge(cp);
-			return;
-		}
+		if (CargoList<Tinst>::TryMerge(*it, cp)) return;
 	}
 
 	/* The packet could not be merged with another one */
@@ -251,34 +261,15 @@ void CargoList<Tinst>::Append(CargoPacket *cp)
 /**
  * Truncates the cargo in this list to the given amount. It leaves the
  * first count cargo entities and removes the rest.
- * @param max_remaining Maximum amount of entities to be in the list after the command.
+ * @param max_move Maximum amount of entities to be removed from the list.
+ * @return Amount of entities actually moved.
  */
 template <class Tinst>
-void CargoList<Tinst>::Truncate(uint max_remaining)
+uint CargoList<Tinst>::Truncate(uint max_move)
 {
-	for (Iterator it(packets.begin()); it != packets.end(); /* done during loop*/) {
-		CargoPacket *cp = *it;
-		if (max_remaining == 0) {
-			/* Nothing should remain, just remove the packets. */
-			it = this->packets.erase(it);
-			static_cast<Tinst *>(this)->RemoveFromCache(cp);
-			delete cp;
-			continue;
-		}
-
-		uint local_count = cp->count;
-		if (local_count > max_remaining) {
-			uint diff = local_count - max_remaining;
-			this->count -= diff;
-			this->cargo_days_in_transit -= cp->days_in_transit * diff;
-			static_cast<Tinst *>(this)->RemoveFromCacheLocal(cp, diff);
-			cp->count = max_remaining;
-			max_remaining = 0;
-		} else {
-			max_remaining -= local_count;
-		}
-		++it;
-	}
+	max_move = min(this->count, max_move);
+	this->PopCargo(CargoRemoval<Tinst>(static_cast<Tinst *>(this), max_move));
+	return max_move;
 }
 
 /**
@@ -352,7 +343,7 @@ restart:;
 			RouteLink *link = FindRouteLinkForCargo(station, cid, cp, &next_unload, cur_order, &found);
 			if (!found) {
 				/* Sorry, link to destination vanished, make cargo disappear. */
-				static_cast<Tinst *>(this)->RemoveFromCache(cp);
+				static_cast<Tinst *>(this)->RemoveFromCache(cp, cp->count);
 				delete cp;
 				it = this->packets.erase(it);
 				continue;
@@ -385,7 +376,7 @@ restart:;
 			/* Can move the complete packet */
 			max_move -= cp->count;
 			it = this->packets.erase(it);
-			static_cast<Tinst *>(this)->RemoveFromCache(cp);
+			static_cast<Tinst *>(this)->RemoveFromCache(cp, cp->count);
 			cp->next_order = current_next_order;
 			cp->next_station = current_next_unload;
 			switch (cp_mta) {
@@ -415,14 +406,8 @@ restart:;
 			payment->PayFinalDelivery(cp, max_move);
 
 			/* Remove the delivered data from the cache */
-			uint left = cp->count - max_move;
-			cp->count = max_move;
-			static_cast<Tinst *>(this)->RemoveFromCache(cp);
-
-			/* Final delivery payment pays the feeder share, so we have to
-			 * reset that so it is not 'shown' twice for partial unloads. */
-			cp->feeder_share = 0;
-			cp->count = left;
+			static_cast<Tinst *>(this)->RemoveFromCache(cp, max_move);
+			cp->Reduce(max_move);
 		} else {
 			/* But... the rest needs package splitting. */
 			CargoPacket *cp_new = cp->Split(max_move);
@@ -430,7 +415,7 @@ restart:;
 			/* We could not allocate a CargoPacket? Is the map that full? */
 			if (cp_new == NULL) return false;
 
-			static_cast<Tinst *>(this)->RemoveFromCache(cp_new); // this reflects the changes in cp.
+			static_cast<Tinst *>(this)->RemoveFromCache(cp_new, max_move); // this reflects the changes in cp.
 			cp_new->next_order = current_next_order;
 			cp_new->next_station = current_next_unload;
 
@@ -456,6 +441,59 @@ restart:;
 	return it != packets.end();
 }
 
+/**
+ * Shifts cargo from the front of the packet list and applies some action to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ */
+template <class Tinst>
+template <class Taction>
+void CargoList<Tinst>::ShiftCargo(Taction action)
+{
+	Iterator it(this->packets.begin());
+	while (it != this->packets.end() && action.MaxMove() > 0) {
+		CargoPacket *cp = *it;
+		if (action(cp)) {
+			it = this->packets.erase(it);
+		} else {
+			break;
+		}
+	}
+}
+
+/**
+ * Pops cargo from the back of the packet list and applies some action to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ */
+template <class Tinst>
+template <class Taction>
+void CargoList<Tinst>::PopCargo(Taction action)
+{
+	if (this->packets.empty()) return;
+	Iterator it(--(this->packets.end()));
+	Iterator begin(this->packets.begin());
+	while (action.MaxMove() > 0) {
+		CargoPacket *cp = *it;
+		if (action(cp)) {
+			if (it != begin) {
+				this->packets.erase(it--);
+			} else {
+				this->packets.erase(it);
+				break;
+			}
+		} else {
+			break;
+		}
+	}
+}
+
 /** Invalidates the cached data and rebuilds it. */
 template <class Tinst>
 void CargoList<Tinst>::InvalidateCache()
@@ -469,14 +507,40 @@ void CargoList<Tinst>::InvalidateCache()
 }
 
 /**
- * Update the cached values to reflect the removal of this packet.
+ * Tries to merge the second packet into the first and return if that was
+ * successful.
+ * @param icp Packet to be merged into.
+ * @param cp Packet to be eliminated.
+ * @return If the packets could be merged.
+ */
+template <class Tinst>
+/* static */ bool CargoList<Tinst>::TryMerge(CargoPacket *icp, CargoPacket *cp)
+{
+	if (Tinst::AreMergable(icp, cp) &&
+				icp->count + cp->count <= CargoPacket::MAX_COUNT) {
+		icp->Merge(cp);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/*
+ *
+ * Vehicle cargo list implementation.
+ *
+ */
+
+/**
+ * Update the cached values to reflect the removal of this packet or part of it.
  * Decreases count, feeder share and days_in_transit.
  * @param cp Packet to be removed from cache.
+ * @param count Amount of cargo from the given packet to be removed.
  */
-void VehicleCargoList::RemoveFromCache(const CargoPacket *cp)
+void VehicleCargoList::RemoveFromCache(const CargoPacket *cp, uint count)
 {
-	this->feeder_share -= cp->feeder_share;
-	this->Parent::RemoveFromCache(cp);
+	this->feeder_share -= cp->FeederShare(count);
+	this->Parent::RemoveFromCache(cp, count);
 }
 
 /**
@@ -536,10 +600,10 @@ void StationCargoList::RemoveFromCacheLocal(const CargoPacket *cp, uint amount)
  * Decreases count and days_in_transit.
  * @param cp Packet to be removed from cache.
  */
-void StationCargoList::RemoveFromCache(const CargoPacket *cp)
+void StationCargoList::RemoveFromCache(const CargoPacket *cp, uint count)
 {
-	this->RemoveFromCacheLocal(cp, cp->count);
-	this->Parent::RemoveFromCache(cp);
+	this->RemoveFromCacheLocal(cp, count);
+	this->Parent::RemoveFromCache(cp, count);
 }
 
 /**
@@ -574,13 +638,13 @@ bool StationCargoList::UpdateCargoNextHop(CargoPacket *cp, Station *st, CargoID 
 
 	if (l == NULL) {
 		/* No link to destination, drop packet. */
-		this->RemoveFromCache(cp);
+		this->RemoveFromCache(cp, cp->count);
 		delete cp;
 		return false;
 	}
 
 	/* Update next hop info. */
-	this->RemoveFromCache(cp);
+	this->RemoveFromCache(cp, cp->count);
 	cp->next_station = next_unload;
 	cp->next_order = l->GetOriginOrderId();
 	this->AddToCache(cp);
@@ -630,7 +694,7 @@ void StationCargoList::UpdateCargoNextHop(Station *st, CargoID cid)
 				if (cp->next_order == order || cp->next_station == st_unload) {
 					/* Invalidate both order and unload station as both likely
 					 * don't make sense anymore. */
-					st->goods[cid].cargo.RemoveFromCache(cp);
+					st->goods[cid].cargo.RemoveFromCache(cp, cp->count);
 					cp->next_order = INVALID_ORDER;
 					cp->next_station = INVALID_STATION;
 					st->goods[cid].cargo.AddToCache(cp);
@@ -654,7 +718,7 @@ void StationCargoList::UpdateCargoNextHop(Station *st, CargoID cid)
 				if (cp->dest_id == dest && cp->dest_type == type) {
 					/* Invalidate both next order and unload station as we
 					 * want the packets to be not routed anymore. */
-					st->goods[cid].cargo.RemoveFromCache(cp);
+					st->goods[cid].cargo.RemoveFromCache(cp, cp->count);
 					cp->next_order = INVALID_ORDER;
 					cp->next_station = INVALID_STATION;
 					st->goods[cid].cargo.AddToCache(cp);

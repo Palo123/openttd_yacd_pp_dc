@@ -26,8 +26,8 @@ extern CargoPaymentPool _cargo_payment_pool;
 struct CargoPayment : CargoPaymentPool::PoolItem<&_cargo_payment_pool> {
 	Vehicle *front;        ///< The front vehicle to do the payment of
 	Money route_profit;    ///< The amount of money to add/remove from the bank account
-	Money visual_profit;   ///< The visual (non-transfer) profit to show
-	Money transfer_profit; ///< The transfer profit to show
+	Money visual_profit;   ///< The visual profit to show
+	Money visual_transfer; ///< The transfer credits to be shown
 
 	/* Unsaved variables */
 	Company *owner;            ///< The owner of the vehicle
