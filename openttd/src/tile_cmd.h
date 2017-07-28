@@ -18,6 +18,8 @@
 #include "track_type.h"
 #include "tile_map.h"
 
+struct CopyPasteParams;
+
 /** The returned bits of VehicleEnterTile. */
 enum VehicleEnterTileStatus {
 	VETS_ENTERED_STATION  = 1, ///< The vehicle entered a station
@@ -136,6 +138,17 @@ typedef Foundation GetFoundationProc(TileIndex tile, Slope tileh);
 typedef CommandCost TerraformTileProc(TileIndex tile, DoCommandFlag flags, int z_new, Slope tileh_new);
 
 /**
+ * Tile callback function signature for copy-pasting tile content.
+ *
+ * @param src_tile   Tile to copy content from.
+ * @param dst_tile   Tile where to paste the content.
+ * @param copy_paste What, where and how we are copying.
+ * @param flags      Command flags passed to the copy-paste command.
+ */
+typedef void CopyPasteTileProc(GenericTileIndex src_tile, GenericTileIndex dst_tile, const CopyPasteParams &copy_paste);
+
+
+/**
  * Set of callback functions for performing tile operations of a given tile type.
  * @see TileType
  */
@@ -154,6 +167,7 @@ struct TileTypeProcs {
 	VehicleEnterTileProc *vehicle_enter_tile_proc; ///< Called when a vehicle enters a tile
 	GetFoundationProc *get_foundation_proc;
 	TerraformTileProc *terraform_tile_proc;        ///< Called when a terraforming operation is about to take place
+	CopyPasteTileProc *copy_paste_tile_proc;       ///< Called to copy-paste content of a tile
 };
 
 extern const TileTypeProcs * const _tile_type_procs[16];

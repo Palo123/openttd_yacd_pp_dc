@@ -30,12 +30,14 @@ static const SaveLoad _industry_desc[] = {
 	    SLE_ARR(Industry, production_rate,            SLE_UINT8,  2),
 	SLE_CONDNULL( 3, 0, 60),       ///< used to be industry's accepts_cargo
 	SLE_CONDARR(Industry, accepts_cargo,              SLE_UINT8,  3,              78, SL_MAX_VERSION),
+	SLE_CONDVAR(Industry, produced_accepted_mask,     SLE_UINT32,                181, SL_MAX_VERSION),
 	    SLE_VAR(Industry, prod_level,                 SLE_UINT8),
 	    SLE_ARR(Industry, this_month_production,      SLE_UINT16, 2),
 	    SLE_ARR(Industry, this_month_transported,     SLE_UINT16, 2),
 	    SLE_ARR(Industry, last_month_pct_transported, SLE_UINT8,  2),
 	    SLE_ARR(Industry, last_month_production,      SLE_UINT16, 2),
 	    SLE_ARR(Industry, last_month_transported,     SLE_UINT16, 2),
+	SLE_CONDARR(Industry, average_production,         SLE_UINT16, 2,             181, SL_MAX_VERSION),
 
 	    SLE_VAR(Industry, counter,                    SLE_UINT16),
 
@@ -63,6 +65,12 @@ static const SaveLoad _industry_desc[] = {
 	SLE_END()
 };
 
+static void RealSave_INDY(Industry *ind)
+{
+	SlObject(ind, _industry_desc);
+	ind->SaveCargoSourceSink();
+}
+
 static void Save_INDY()
 {
 	Industry *ind;
@@ -70,7 +78,7 @@ static void Save_INDY()
 	/* Write the industries */
 	FOR_ALL_INDUSTRIES(ind) {
 		SlSetArrayIndex(ind->index);
-		SlObject(ind, _industry_desc);
+		SlAutolength((AutolengthProc *)RealSave_INDY, ind);
 	}
 }
 
@@ -93,6 +101,7 @@ static void Load_INDY()
 	while ((index = SlIterateArray()) != -1) {
 		Industry *i = new (index) Industry();
 		SlObject(i, _industry_desc);
+		i->LoadCargoSourceSink();
 
 		/* Before savegame version 161, persistent storages were not stored in a pool. */
 		if (IsSavegameVersionBefore(161) && !IsSavegameVersionBefore(76)) {
@@ -121,6 +130,7 @@ static void Ptrs_INDY()
 
 	FOR_ALL_INDUSTRIES(i) {
 		SlObject(i, _industry_desc);
+		i->PtrsCargoSourceSink();
 	}
 }
 

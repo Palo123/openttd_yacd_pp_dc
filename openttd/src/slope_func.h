@@ -189,6 +189,48 @@ static inline Corner OppositeCorner(Corner corner)
 }
 
 /**
+ * Transform a Corner.
+ * @param c The Corner to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Corner.
+ */
+static inline Corner TransformCorner(Corner c, DirTransformation transformation)
+{
+	if (transformation & DTR_REFLECTION_BIT) c = (Corner)(1 - c); // reflect against X-axis (let overflow)
+	return (Corner)((uint)(c + transformation) % CORNER_END); // rotate and cut off overflowing bits
+}
+
+/**
+ * Transform a Slope.
+ * @param s The Slope to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Slope.
+ */
+static inline Slope TransformSlope(Slope s, DirTransformation transformation)
+{
+	assert((s & ~(SLOPE_ELEVATED | SLOPE_STEEP)) == 0);
+
+	Slope steep_bit = s & SLOPE_STEEP; // store the "steep" bit
+	s &= SLOPE_ELEVATED; // only "corner" bits need to be transformed
+
+	/* reflect agains X axis before rotating */
+	if (transformation & DTR_REFLECTION_BIT) {
+		/* reflect by swapping odd and even bits (the numbers are bit positions):
+		 *   [N]          3/                              2/
+		 * [W] [E]       0/2 --reflect-against-x-axis--> 1/3
+		 *   [S]         /1                              /0
+		 *  SLOPE_W (bit 0) needs to be swapped with SLOPE_S (bit 1)
+		 *  SLOPE_E (bit 2) needs to be swapped with SLOPE_N (bit 3) */
+		s = SwapOddEvenBits(s);
+	}
+
+	/* rotate */
+	s = (Slope)((s | (s << 4)) >> (transformation & DTR_ROTATION_MASK)) & SLOPE_ELEVATED;
+
+	return s | steep_bit;
+}
+
+/**
  * Tests if a specific slope has exactly three corners raised.
  *
  * @param s The #Slope

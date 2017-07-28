@@ -312,6 +312,12 @@ Money Engine::GetRunningCost() const
 
 		default: NOT_REACHED();
 	}
+       /* Multiply showed running cost according to day length balance type. */
+       if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+               _settings_game.economy.day_length_balance_type == DBT_RUN_COST)
+       {
+               return GetPrice(base_price, cost_factor, this->GetGRF(), -8) * _settings_game.economy.day_length_balance_factor;
+       }
 
 	return GetPrice(base_price, cost_factor, this->GetGRF(), -8);
 }
@@ -352,6 +358,10 @@ Money Engine::GetCost() const
 
 		default: NOT_REACHED();
 	}
+       /* Multiply showed cost according to day length balance type. */
+       if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+               return GetPrice(base_price, cost_factor, this->GetGRF(), -8) * _settings_game.economy.day_length_balance_factor;
+       }
 
 	return GetPrice(base_price, cost_factor, this->GetGRF(), -8);
 }

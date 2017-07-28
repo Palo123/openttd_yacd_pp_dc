@@ -143,7 +143,7 @@ bool GenerateVehicleSortList(VehicleList *list, const VehicleListIdentifier &vli
 		case VL_GROUP_LIST:
 			if (vli.index != ALL_GROUP) {
 				FOR_ALL_VEHICLES(v) {
-					if (v->type == vli.vtype && v->IsPrimaryVehicle() &&
+					if (!HasBit(v->subtype, GVSF_VIRTUAL) && v->type == vli.vtype && v->IsPrimaryVehicle() &&	//MYGUI
 							v->owner == vli.company && v->group_id == vli.index) {
 						*list->Append() = v;
 					}
@@ -154,7 +154,7 @@ bool GenerateVehicleSortList(VehicleList *list, const VehicleListIdentifier &vli
 
 		case VL_STANDARD:
 			FOR_ALL_VEHICLES(v) {
-				if (v->type == vli.vtype && v->owner == vli.company && v->IsPrimaryVehicle()) {
+				if (!HasBit(v->subtype, GVSF_VIRTUAL) && v->type == vli.vtype && v->owner == vli.company && v->IsPrimaryVehicle()) { //MYGUI
 					*list->Append() = v;
 				}
 			}

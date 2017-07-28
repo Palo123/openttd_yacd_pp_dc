@@ -53,6 +53,8 @@ void SetWindowClassesDirty(WindowClass cls);
 void DeleteWindowById(WindowClass cls, WindowNumber number, bool force = true);
 void DeleteWindowByClass(WindowClass cls);
 
+void FocusWindowById(WindowClass cls, WindowNumber number);
+
 bool EditBoxInGlobalFocus();
 Point GetCaretPosition();
 

@@ -11,6 +11,7 @@
 
 #include "stdafx.h"
 #include "cmd_helper.h"
+#include "copypaste_cmd.h"
 #include "landscape.h"
 #include "viewport_func.h"
 #include "command_func.h"
@@ -38,6 +39,7 @@
 #include "date_func.h"
 #include "company_base.h"
 #include "company_gui.h"
+#include "clipboard_gui.h"
 #include "newgrf_generic.h"
 
 #include "table/strings.h"
@@ -103,8 +105,15 @@ CommandCost CmdBuildShipDepot(TileIndex tile, DoCommandFlag flags, uint32 p1, ui
 
 	TileIndex tile2 = tile + (axis == AXIS_X ? TileDiffXY(1, 0) : TileDiffXY(0, 1));
 
-	if (!HasTileWaterGround(tile) || !HasTileWaterGround(tile2)) {
-		return_cmd_error(STR_ERROR_MUST_BE_BUILT_ON_WATER);
+	WaterClass wc1, wc2;
+	if ((flags & DC_PASTE) && !(flags & DC_EXEC)) {
+		/* When pasting a ship depot, there may be no water yet (a canal will be placed when DC_EXE'ing).
+		 * Ignore that there is no water so we can calculate the cost more precisely. */
+		wc1 = wc2 = WATER_CLASS_INVALID;
+	} else {
+		if (!HasTileWaterGround(tile) || !HasTileWaterGround(tile2)) return_cmd_error(STR_ERROR_MUST_BE_BUILT_ON_WATER);
+		wc1 = GetWaterClass(tile);
+		wc2 = GetWaterClass(tile2);
 	}
 
 	if ((MayHaveBridgeAbove(tile) && IsBridgeAbove(tile)) ||
@@ -117,8 +126,6 @@ CommandCost CmdBuildShipDepot(TileIndex tile, DoCommandFlag flags, uint32 p1, ui
 
 	if (!Depot::CanAllocateItem()) return CMD_ERROR;
 
-	WaterClass wc1 = GetWaterClass(tile);
-	WaterClass wc2 = GetWaterClass(tile2);
 	CommandCost cost = CommandCost(EXPENSES_CONSTRUCTION, _price[PR_BUILD_DEPOT_SHIP]);
 
 	bool add_cost = !IsWaterTile(tile);
@@ -145,6 +152,7 @@ CommandCost CmdBuildShipDepot(TileIndex tile, DoCommandFlag flags, uint32 p1, ui
 		Company::Get(_current_company)->infrastructure.water += 2 * LOCK_DEPOT_TILE_FACTOR;
 		DirtyCompanyInfrastructureWindows(_current_company);
 
+		assert(wc1 != WATER_CLASS_INVALID && wc2 != WATER_CLASS_INVALID);
 		MakeShipDepot(tile,  _current_company, depot->index, DEPOT_PART_NORTH, axis, wc1);
 		MakeShipDepot(tile2, _current_company, depot->index, DEPOT_PART_SOUTH, axis, wc2);
 		MarkTileDirtyByTile(tile);
@@ -866,6 +874,7 @@ static void DrawTile_Water(TileInfo *ti)
 			DrawWaterDepot(ti);
 			break;
 	}
+	DrawOverlay(ti, MP_WATER);
 }
 
 void DrawShipDepotSprite(int x, int y, Axis axis, DepotPart part)
@@ -1315,6 +1324,175 @@ static CommandCost TerraformTile_Water(TileIndex tile, DoCommandFlag flags, int 
 	return DoCommand(tile, 0, 0, flags, CMD_LANDSCAPE_CLEAR);
 }
 
+void CopyPastePlaceCannal(GenericTileIndex tile)
+{
+	if (IsMainMapTile(tile)) {
+		_current_pasting->DoCommand(AsMainMapTile(tile), AsMainMapTile(tile), WATER_CLASS_CANAL, CMD_BUILD_CANAL | CMD_MSG(STR_ERROR_CAN_T_BUILD_CANALS));
+	} else {
+		MakeCanal(tile, OWNER_NONE, 0);
+	}
+}
+
+static void CopyPastePlaceLock(GenericTileIndex tile, DiagDirection dir)
+{
+	if (IsMainMapTile(tile)) {
+		TileIndex t = AsMainMapTile(tile);
+		if (dir != GetInclinedSlopeDirection(GetTilePixelSlope(tile, NULL))) {
+			_current_pasting->CollectError(t, STR_ERROR_LAND_SLOPED_IN_WRONG_DIRECTION, STR_ERROR_CAN_T_BUILD_LOCKS);
+		} else if (IsTileType(t, MP_WATER) && IsTileOwner(t, _current_company) && IsLock(t) && GetLockPart(t) == LOCK_PART_MIDDLE) {
+			_current_pasting->CollectError(t, STR_ERROR_ALREADY_BUILT, STR_ERROR_CAN_T_BUILD_LOCKS);
+		} else {
+			_current_pasting->DoCommand(t, 0, 0, CMD_BUILD_LOCK | CMD_MSG(STR_ERROR_CAN_T_BUILD_LOCKS));
+		}
+	} else {
+		MakeLock(tile, OWNER_NONE, dir, WATER_CLASS_INVALID, WATER_CLASS_INVALID, WATER_CLASS_INVALID);
+	}
+}
+
+static void CopyPastePlaceShipDepot(GenericTileIndex tile, DiagDirection dir)
+{
+	GenericTileIndex other_tile = TileAddByDiagDir(tile, ReverseDiagDir(dir));
+
+	if (IsMainMapTile(tile)) {
+		TileIndex t1 = AsMainMapTile(tile);
+		TileIndex t2 = AsMainMapTile(other_tile);
+		/* build a canal if not on water */
+		if (!HasTileWaterGround(t1)) {
+			CopyPastePlaceCannal(GenericTileIndex(t1));
+			if (_current_pasting->last_result.Failed()) return;
+		}
+		if (!HasTileWaterGround(t2)) {
+			CopyPastePlaceCannal(GenericTileIndex(t2));
+			if (_current_pasting->last_result.Failed()) return;
+		}
+		/* build the depot */
+		if (IsShipDepotTile(t1) && IsTileOwner(t1, _current_company) && GetOtherShipDepotTile(t1) == t2) {
+			_current_pasting->CollectError(t1, STR_ERROR_ALREADY_BUILT, STR_ERROR_CAN_T_BUILD_SHIP_DEPOT);
+		} else {
+			_current_pasting->DoCommand(min(t1, t2), DiagDirToAxis(dir), 0, CMD_BUILD_SHIP_DEPOT | CMD_MSG(STR_ERROR_CAN_T_BUILD_SHIP_DEPOT));
+		}
+	} else {
+		MakeShipDepot(min(tile, other_tile), OWNER_NONE, 0, DEPOT_PART_NORTH, DiagDirToAxis(dir), WATER_CLASS_INVALID);
+		MakeShipDepot(max(tile, other_tile), OWNER_NONE, 0, DEPOT_PART_SOUTH, DiagDirToAxis(dir), WATER_CLASS_INVALID);
+	}
+}
+
+/**
+ * Test a given water tile if there is any contented to be copied from it.
+ *
+ * Some water objects (e.g. water locks) can't be copy/pasted tile by tile, we have to do it with
+ * bigger rectangular pieces. The function writes this area to location pointed by \c object_rect
+ * but only once per a piece - when a certain tile is tested:
+ *    - in case of water locks, valid area is written when the center tile of a lock is tested
+ *    - in case of ship depots, valid area is written when the northern tile of a depot is tested
+ * For the rest of tiles the function still returns \c true but writes "invalid" area.
+ *
+ * If the funtion returns \c false, \c object_rect remains unchanged.
+ *
+ * @param tile the tile to test
+ * @param src_area the tile area we are copying
+ * @param mode copy-paste mode
+ * @param object_rect (out, may be NULL) area to be copy pasted in this step or "invalid" area, depending on which tile was given
+ * @param company the #Company to check ownership against to
+ * @param preview (out, may be NULL) information on how to higlight preview of the tile
+ * @return whether this tile needs to be copy-pasted
+ */
+bool TestWaterTileCopyability(GenericTileIndex tile, const GenericTileArea &src_area, CopyPasteMode mode, GenericTileArea *object_rect, CompanyID company = _current_company, TileContentPastePreview *preview = NULL)
+{
+	if (preview != NULL) MemSetT(preview, 0);
+
+	if (!(mode & CPM_WITH_WATER_TRANSPORT)) return false;
+	if (IsMainMapTile(tile) && !IsTileOwner(tile, company)) return false;
+
+	switch (GetWaterTileType(tile)) {
+		case WATER_TILE_CLEAR:
+			if (GetWaterClass(tile) != WATER_CLASS_CANAL) return false; // copy only cannals
+			if (object_rect != NULL) *object_rect = GenericTileArea(tile, 1, 1);
+			break;
+
+		case WATER_TILE_LOCK:
+			if (IsMainMapTile(tile) || object_rect != NULL) {
+				DiagDirection dir = GetLockDirection(tile);
+				switch (GetLockPart(tile)) {
+					case LOCK_PART_MIDDLE: {
+						GenericTileArea ta(tile, 1, 1);
+						ta.Add(TileAddByDiagDir(tile, dir));
+						ta.Add(TileAddByDiagDir(tile, ReverseDiagDir(dir)));
+						if (IsMainMapTile(tile) && !src_area.Contains(ta)) return false;
+						if (object_rect != NULL) *object_rect = ta;
+						break;
+					}
+
+					case LOCK_PART_UPPER:
+						dir = ReverseDiagDir(dir);
+						/* FALLTHROUGH */
+					case LOCK_PART_LOWER:
+						if (IsMainMapTile(tile) && !src_area.Contains(TileAddByDiagDir(TileAddByDiagDir(tile, dir), dir))) return false;
+						if (object_rect != NULL) *object_rect = GenericTileArea(GenericTileIndex(INVALID_TILE_INDEX, MapOf(tile)), 0, 0);
+						break;
+				}
+			}
+			break;
+
+		case WATER_TILE_DEPOT: {
+			/* test if the depot is within copy area */
+			GenericTileIndex other_tile = GetOtherShipDepotTile(tile);
+			if (IsMainMapTile(tile) && !src_area.Contains(other_tile)) return false;
+
+			if (object_rect != NULL) {
+				if (tile < other_tile) { // copy this depot only once
+					*object_rect = GenericTileArea(tile, other_tile);
+				} else {
+					*object_rect = GenericTileArea(GenericTileIndex(INVALID_TILE_INDEX, MapOf(tile)), 0, 0);
+				}
+			}
+			break;
+		}
+
+		default:
+			return false;
+	}
+
+	if (preview != NULL) preview->highlight_tile_rect = true;
+	return true;
+}
+
+void CopyPasteTile_Water(GenericTileIndex src_tile, GenericTileIndex dst_tile, const CopyPasteParams &copy_paste)
+{
+	GenericTileArea src_object_rect;
+	if (!TestWaterTileCopyability(src_tile, copy_paste.src_area, copy_paste.mode, &src_object_rect)) return;
+	if (!IsValidTileIndex(src_object_rect.tile)) return; // copy water object (e.g. water lock or ship depot) only once
+
+	/* Terraform tiles if needed */
+	if (IsMainMapTile(dst_tile) && (copy_paste.mode & CPM_TERRAFORM_MASK) == CPM_TERRAFORM_MINIMAL) {
+		GenericTileIndex t = copy_paste.src_area.ReverseTransformTile(src_tile, dst_tile, copy_paste.transformation); // transformed northern tile of the area.src
+		t = copy_paste.src_area.TransformTile(src_object_rect.tile, t, copy_paste.transformation); // transformed northern tile of the src_object_rect
+		t = src_object_rect.ReverseTransformedNorth(t, copy_paste.transformation); // northern tile of the transformed src_object_rect
+		CopyPasteHeights(src_object_rect, t, copy_paste.transformation, copy_paste.height_delta);
+		if (IsPastingInterrupted()) return;
+	}
+
+	switch (GetWaterTileType(src_tile)) {
+		case WATER_TILE_CLEAR:
+			CopyPastePlaceCannal(dst_tile);
+			break;
+
+		case WATER_TILE_LOCK: {
+			DiagDirection dir = TransformDiagDir(GetLockDirection(src_tile), copy_paste.transformation);
+			CopyPastePlaceLock(dst_tile, dir);
+			break;
+		}
+
+		case WATER_TILE_DEPOT:
+			CopyPastePlaceShipDepot(dst_tile, TransformDiagDir(GetShipDepotDirection(src_tile), copy_paste.transformation));
+			break;
+
+		default:
+			NOT_REACHED();
+			break;
+	}
+}
+
 
 extern const TileTypeProcs _tile_type_water_procs = {
 	DrawTile_Water,           // draw_tile_proc
@@ -1331,4 +1509,5 @@ extern const TileTypeProcs _tile_type_water_procs = {
 	VehicleEnter_Water,       // vehicle_enter_tile_proc
 	GetFoundation_Water,      // get_foundation_proc
 	TerraformTile_Water,      // terraform_tile_proc
+	CopyPasteTile_Water,      // copypaste_tile_proc
 };

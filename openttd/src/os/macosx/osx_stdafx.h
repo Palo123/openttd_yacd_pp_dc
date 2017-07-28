@@ -76,6 +76,7 @@
 #define ScriptOrder OTTDScriptOrder
 #define Palette     OTTDPalette
 #define GlyphID     OTTDGlyphID
+#define RoutingFlags OTTDRoutingFlags
 
 #include <CoreServices/CoreServices.h>
 #include <ApplicationServices/ApplicationServices.h>
@@ -86,6 +87,7 @@
 #undef ScriptOrder
 #undef Palette
 #undef GlyphID
+#undef RoutingFlags
 
 /* remove the variables that CoreServices defines, but we define ourselves too */
 #undef bool

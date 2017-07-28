@@ -54,6 +54,7 @@
 #include "base_media_base.h"
 #include "gamelog.h"
 #include "settings_func.h"
+#include "economy_func.h"
 #include "ini_type.h"
 #include "ai/ai_config.hpp"
 #include "ai/ai.hpp"
@@ -64,9 +65,13 @@
 #include "roadveh.h"
 #include "fios.h"
 #include "strings_func.h"
+#include "industry.h"
+#include "cargodest_func.h"
+#include "trafficlight_func.h"
 
 #include "void_map.h"
 #include "station_base.h"
+#include "infrastructure_func.h"
 
 #include "table/strings.h"
 #include "table/settings.h"
@@ -760,6 +765,20 @@ SettingType SettingDesc::GetType() const
 
 /* Begin - Callback Functions for the various settings. */
 
+static bool AfterChangeOfMaxHeightlevel(int32 p1)
+{
+	for (uint x = 0; x < MapMaxX(); x++) {
+		for (uint y = 0; y < MapMaxY(); y++) {
+			TileIndex tile = TileXY(x, y);
+			if ((int32)TileHeight(tile) > p1) {
+				ShowErrorMessage(STR_CONFIG_SETTING_TOO_HIGH_MOUNTAIN, INVALID_STRING_ID, WL_ERROR);
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 /** Reposition the main toolbar as the setting changed. */
 static bool v_PositionMainToolbar(int32 p1)
 {
@@ -803,11 +822,39 @@ static bool RedrawSmallmap(int32 p1)
 	return true;
 }
 
+/**
+ * Check, if we dont have bigger balance factor than day length factor.
+ */
+static bool CheckDayLengthBalance(int32 p1)
+{
+	EconomySettings *es;
+
+	if (_game_mode == GM_MENU) {
+		es = &_settings_newgame.economy;
+	} else {
+		es = &_settings_game.economy;
+	}
+
+	if (es->day_length_factor < es->day_length_balance_factor) {
+		es->day_length_balance_factor = es->day_length_factor;
+	}
+
+	return true;
+}
+
+static bool InvalidateIndustryWindow(int32 p1)
+{
+	InvalidateWindowData(WC_INDUSTRY_DIRECTORY, 0, 1);
+	return true;
+}
+
 static bool InvalidateDetailsWindow(int32 p1)
 {
 	SetWindowClassesDirty(WC_VEHICLE_DETAILS);
 	return true;
 }
+
+
 
 static bool StationSpreadChanged(int32 p1)
 {
@@ -1033,6 +1080,27 @@ static bool TownFoundingChanged(int32 p1)
 	return true;
 }
 
+/**
+ * Updates everything affected by day length.
+ */
+static bool UpdateAllCosts(int32 p1)
+{
+	if (_game_mode != GM_MENU) {
+		InvalidateIndustryWindow(p1);
+
+		SetWindowClassesDirty(WC_BUILD_VEHICLE);
+		SetWindowClassesDirty(WC_REPLACE_VEHICLE);
+
+		InvalidateBuildIndustryWindow(p1);
+		InvalidateDetailsWindow(p1);
+	}
+
+	InitializeGraphPerformance();
+	CheckDayLengthBalance(p1);
+
+	return true;
+}
+
 static bool InvalidateVehTimetableWindow(int32 p1)
 {
 	InvalidateWindowClassesData(WC_VEHICLE_TIMETABLE, VIWD_MODIFY_ORDERS);
@@ -1170,6 +1238,21 @@ static size_t ConvertLandscape(const char *value)
 	return LookupOneOfMany("normal|hilly|desert|candy", value);
 }
 
+/**
+ * What to do when traffic light Setting was changed.
+ * @param p1 unused
+ * @return always 0
+ */
+static bool TLSettingChanged(int32 p1)
+{
+	/* Road building gui changed. */
+	MarkWholeScreenDirty();
+
+	/* If traffic lights got disabled, clear them all. */
+	if (!_settings_game.construction.traffic_lights) ClearAllTrafficLights();
+	return true;
+}
+
 static bool CheckFreeformEdges(int32 p1)
 {
 	if (_game_mode == GM_MENU) return true;
@@ -1253,6 +1336,82 @@ static bool StationCatchmentChanged(int32 p1)
 	return true;
 }
 
+bool CargodestModeChanged(int32 p1)
+{
+	/* Clear route links and destinations for cargoes that aren't routed anymore. */
+	Station *st;
+	FOR_ALL_STATIONS(st) {
+		for (CargoID cid = 0; cid < NUM_CARGO; cid++) {
+			if (CargoHasDestinations(cid)) continue;
+
+			/* Clear route links. */
+			for (RouteLinkList::iterator i = st->goods[cid].routes.begin(); i != st->goods[cid].routes.end(); ++i) {
+				delete *i;
+			}
+			st->goods[cid].routes.clear();
+
+			/* Remove destinations from cargo packets. */
+			for (StationCargoList::Iterator i = st->goods[cid].cargo.packets.begin(); i != st->goods[cid].cargo.packets.end(); ++i) {
+				(*i)->dest_id = INVALID_SOURCE;
+				(*i)->next_order = INVALID_ORDER;
+				(*i)->next_station = INVALID_STATION;
+			}
+			st->goods[cid].cargo.InvalidateCache();
+		}
+	}
+
+	Vehicle *v;
+	FOR_ALL_VEHICLES(v) {
+		if (v->IsFrontEngine()) PrefillRouteLinks(v);
+		if (CargoHasDestinations(v->cargo_type)) continue;
+		/* Remove destination from all cargoes that aren't routed anymore. */
+		for (VehicleCargoList::Iterator i = v->cargo.packets.begin(); i != v->cargo.packets.end(); ++i) {
+			(*i)->dest_id = INVALID_SOURCE;
+			(*i)->next_order = INVALID_ORDER;
+			(*i)->next_station = INVALID_STATION;
+		}
+		v->cargo.InvalidateCache();
+	}
+
+	/* Clear all links for cargoes that aren't routed anymore. */
+	CargoSourceSink *css;
+	FOR_ALL_TOWNS(css) {
+		for (CargoID cid = 0; cid < NUM_CARGO; cid++) {
+			if (!CargoHasDestinations(cid)) css->cargo_links[cid].Clear();
+		}
+	}
+	FOR_ALL_INDUSTRIES(css) {
+		for (CargoID cid = 0; cid < NUM_CARGO; cid++) {
+			if (!CargoHasDestinations(cid)) css->cargo_links[cid].Clear();
+		}
+	}
+
+	/* Recount incoming cargo links. */
+	RebuildCargoLinkCounts();
+
+	/* Update remaining links. */
+	UpdateCargoLinks();
+
+	return true;
+}
+
+static bool MaxYellowSpeedChanged(int32 p1)
+{
+	if (_settings_game.pf.double_yellow_speed < p1) {
+		ShowErrorMessage(STR_CONFIG_SETTING_YELLOW_DOUBLE_YELLOW_SMALLER, INVALID_STRING_ID, WL_ERROR);
+		return false;
+	}
+	return true;
+}
+
+static bool MaxDoubleYellowSpeedChanged(int32 p1)
+{
+	if (_settings_game.pf.yellow_speed > p1) {
+		ShowErrorMessage(STR_CONFIG_SETTING_YELLOW_DOUBLE_YELLOW_SMALLER, INVALID_STRING_ID, WL_ERROR);
+		return false;
+	}
+	return true;
+}
 
 #ifdef ENABLE_NETWORK
 
@@ -1289,6 +1448,27 @@ static bool UpdateClientConfigValues(int32 p1)
 
 #endif /* ENABLE_NETWORK */
 
+static bool CheckSharingRail(int32 p1)
+{
+	if (!CheckSharingChangePossible(VEH_TRAIN)) return false;
+	UpdateAllBlockSignals();
+	return true;
+}
+ 
+static bool CheckSharingRoad(int32 p1)
+{
+	return CheckSharingChangePossible(VEH_ROAD);
+}
+
+static bool CheckSharingWater(int32 p1)
+{
+	return CheckSharingChangePossible(VEH_SHIP);
+}
+
+static bool CheckSharingAir(int32 p1)
+{
+	return CheckSharingChangePossible(VEH_AIRCRAFT);
+}
 
 /* End - Callback Functions */
 

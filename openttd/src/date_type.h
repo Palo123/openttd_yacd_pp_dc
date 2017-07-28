@@ -12,14 +12,17 @@
 #ifndef DATE_TYPE_H
 #define DATE_TYPE_H
 
-
 typedef int32  Date;      ///< The type to store our dates in
 typedef uint16 DateFract; ///< The fraction of a date we're in, i.e. the number of ticks since the last date changeover
 typedef int32  Ticks;     ///< The type to store ticks in
+typedef int64 DateTicks;  ///< The type to store dates in when tick-precision is required
+typedef int32  Minutes;   ///< The type to store minutes in
 
 typedef int32  Year;  ///< Type for the year, note: 0 based, i.e. starts at the year 0.
 typedef uint8  Month; ///< Type for the month, note: 0 based, i.e. 0 = January, 11 = December.
 typedef uint8  Day;   ///< Type for the day of the month, note: 1 based, first day of a month is 1.
+
+#include "settings_type.h"
 
 /**
  * 1 day is 74 ticks; _date_fract used to be uint16 and incremented by 885. On
@@ -31,6 +34,8 @@ static const int DAY_TICKS         =  74; ///< ticks per day
 static const int DAYS_IN_YEAR      = 365; ///< days per year
 static const int DAYS_IN_LEAP_YEAR = 366; ///< sometimes, you need one day more...
 
+#define DATE_UNIT_SIZE (_settings_client.gui.time_in_minutes ? _settings_client.gui.ticks_per_minute : DAY_TICKS_DAY_LENGTH)
+
 static const int STATION_RATING_TICKS     = 185; ///< cycle duration for updating station rating
 static const int STATION_ACCEPTANCE_TICKS = 250; ///< cycle duration for updating station acceptance
 static const int CARGO_AGING_TICKS        = 185; ///< cycle duration for aging cargo
@@ -38,6 +43,7 @@ static const int INDUSTRY_PRODUCE_TICKS   = 256; ///< cycle duration for industr
 static const int TOWN_GROWTH_TICKS        = 70;  ///< cycle duration for towns trying to grow. (this originates from the size of the town array in TTD
 static const int INDUSTRY_CUT_TREE_TICKS  = INDUSTRY_PRODUCE_TICKS * 2; ///< cycle duration for lumber mill's extra action
 
+#define DAY_TICKS_DAY_LENGTH (DAY_TICKS * _settings_game.economy.day_length_factor) ///< ticks per day with day length
 
 /*
  * ORIGINAL_BASE_YEAR, ORIGINAL_MAX_YEAR and DAYS_TILL_ORIGINAL_BASE_YEAR are
@@ -94,6 +100,21 @@ static const Year MAX_YEAR  = 5000000;
 
 /** The number of days till the last day */
 #define MAX_DAY (DAYS_TILL(MAX_YEAR + 1) - 1)
+
+/** The day when converting to minutes */
+#define MINUTES_DAY(minutes) (minutes / 1440)
+
+/** The hour when converting to minutes */
+#define MINUTES_HOUR(minutes) ((minutes / 60) % 24)
+
+/** The day when converting to minutes */
+#define MINUTES_MINUTE(minutes) (minutes % 60)
+
+/** Convert minutes to a date */
+#define MINUTES_DATE(day, hour, minute) ((day * 1440) + (hour * 60) + minute)
+
+/** Get the current date in minutes */
+#define CURRENT_MINUTE ((((DateTicks)_date * DAY_TICKS_DAY_LENGTH) + _date_fract) / _settings_client.gui.ticks_per_minute)
 
 /**
  * Data structure to convert between Date and triplet (year, month, and day).

@@ -101,8 +101,7 @@ bool TryReserveRailTrack(TileIndex tile, Track t, bool trigger_stations)
 		case MP_ROAD:
 			if (IsLevelCrossing(tile) && !HasCrossingReservation(tile)) {
 				SetCrossingReservation(tile, true);
-				BarCrossing(tile);
-				MarkTileDirtyByTile(tile); // crossing barred, make tile dirty
+				UpdateLevelCrossing(tile, false);
 				return true;
 			}
 			break;
@@ -358,6 +357,42 @@ Train *GetTrainForReservation(TileIndex tile, Track track)
 	}
 
 	return NULL;
+}
+
+/**
+ * Determine whether next tile has a pbs signal facing us.
+ *
+ * @param v the vehicle to test for
+ * @param tile The tile
+ * @param trackdir The trackdir to test
+ * @param forbid_90deg Don't allow trains to make 90 degree turns
+ * @return True if there is pbs signal facing us
+ */
+bool IsNextTilePbs(const Train *v, TileIndex tile, Trackdir trackdir, bool forbid_90deg)
+{
+	if (IsRailDepotTile(tile)) return false;
+	if (IsTileType(tile, MP_RAILWAY)) {
+		/* Non-pbs signal on the tile */
+		if (HasSignalOnTrackdir(tile, trackdir) && !IsPbsSignal(GetSignalType(tile, TrackdirToTrack(trackdir)))) return false;
+	}
+	/* Check next tile. For performance reasons, we check for 90 degree turns ourself. */
+	CFollowTrackRail ft(v, GetRailTypeInfo(v->railtype)->compatible_railtypes);	
+	/* End of track? */
+	if (!ft.Follow(tile, trackdir)) {
+		/* We don't look ahead of terminus station. */
+		return false;
+	}
+	/* Check for reachable tracks. */
+	ft.m_new_td_bits &= DiagdirReachesTrackdirs(ft.m_exitdir);
+	if (forbid_90deg) ft.m_new_td_bits &= ~TrackdirCrossesTrackdirs(trackdir);
+	if (ft.m_new_td_bits == TRACKDIR_BIT_NONE) return false;
+
+	if (ft.m_new_td_bits != TRACKDIR_BIT_NONE && KillFirstBit(ft.m_new_td_bits) == TRACKDIR_BIT_NONE) {
+		Trackdir td = FindFirstTrackdir(ft.m_new_td_bits);
+		/* PBS signal on next trackdir? Finally we found it. */
+		if (HasPbsSignalOnTrackdir(ft.m_new_tile, td)) return true;
+	}
+	return false;
 }
 
 /**

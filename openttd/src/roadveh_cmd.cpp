@@ -33,8 +33,10 @@
 #include "core/random_func.hpp"
 #include "company_base.h"
 #include "core/backup_type.hpp"
+#include "infrastructure_func.h"
 #include "newgrf.h"
 #include "zoom_func.h"
+#include "town.h"
 
 #include "table/strings.h"
 
@@ -216,6 +218,8 @@ void RoadVehUpdateCache(RoadVehicle *v, bool same_length)
 
 	v->gcache.cached_total_length = 0;
 
+	uint32 cargo_mask = 0;
+
 	for (RoadVehicle *u = v; u != NULL; u = u->Next()) {
 		/* Check the v->first cache. */
 		assert(u->First() == v);
@@ -237,12 +241,15 @@ void RoadVehUpdateCache(RoadVehicle *v, bool same_length)
 		/* Invalidate the vehicle colour map */
 		u->colourmap = PAL_NONE;
 
+		/* Update carried cargo. */
+		if (u->cargo_type != INVALID_CARGO && u->cargo_cap > 0) SetBit(cargo_mask, u->cargo_type);
 		/* Update cargo aging period. */
 		u->vcache.cached_cargo_age_period = GetVehicleProperty(u, PROP_ROADVEH_CARGO_AGE_PERIOD, EngInfo(u->engine_type)->cargo_age_period);
 	}
 
 	uint max_speed = GetVehicleProperty(v, PROP_ROADVEH_SPEED, 0);
 	v->vcache.cached_max_speed = (max_speed != 0) ? max_speed * 4 : RoadVehInfo(v->engine_type)->max_speed;
+	v->vcache.cached_cargo_mask = cargo_mask;
 }
 
 /**
@@ -365,7 +372,7 @@ CommandCost CmdTurnRoadVeh(TileIndex tile, DoCommandFlag flags, uint32 p1, uint3
 
 	if (!v->IsPrimaryVehicle()) return CMD_ERROR;
 
-	CommandCost ret = CheckOwnership(v->owner);
+	CommandCost ret = CheckVehicleControlAllowed(v);
 	if (ret.Failed()) return ret;
 
 	if ((v->vehstatus & VS_STOPPED) ||
@@ -437,18 +444,22 @@ inline int RoadVehicle::GetCurrentMaxSpeed() const
 			if (this->state <= RVSB_TRACKDIR_MASK && IsReversingRoadTrackdir((Trackdir)this->state)) {
 				max_speed = this->vcache.cached_max_speed / 2;
 				break;
-			} else if ((u->direction & 1) == 0) {
+			} else if (((u->direction & 1) == 0) && ( _settings_game.vehicle.limit_vehicle_speed_in_curves )) {
 				max_speed = this->vcache.cached_max_speed * 3 / 4;
 			}
 		}
-
+		
 		/* Vehicle is on the middle part of a bridge. */
 		if (u->state == RVSB_WORMHOLE && !(u->vehstatus & VS_HIDDEN)) {
 			max_speed = min(max_speed, GetBridgeSpec(GetBridgeType(u->tile))->speed * 2);
 		}
 	}
-
+	if ( (this->limit_speed_pass) > 2 )
+	    {
+		max_speed = min(max_speed,this->limit_speed_pass);
+	    }
 	return min(max_speed, this->current_order.max_speed * 2);
+	;
 }
 
 /**
@@ -721,7 +732,7 @@ int RoadVehicle::UpdateSpeed()
 			return this->DoUpdateSpeed(this->overtaking != 0 ? 512 : 256, 0, this->GetCurrentMaxSpeed());
 
 		case AM_REALISTIC:
-			return this->DoUpdateSpeed(this->GetAcceleration() + (this->overtaking != 0 ? 256 : 0), this->GetAccelerationStatus() == AS_BRAKE ? 0 : 4, this->GetCurrentMaxSpeed());
+			return this->DoUpdateSpeed(this->GetAcceleration(AM_REALISTIC) + (this->overtaking != 0 ? 256 : 0), this->GetAccelerationStatus() == AS_BRAKE ? 0 : 4, this->GetCurrentMaxSpeed());
 	}
 }
 
@@ -833,7 +844,7 @@ static void RoadVehCheckOvertake(RoadVehicle *v, RoadVehicle *u)
 	v->overtaking = RVSB_DRIVE_SIDE;
 }
 
-static void RoadZPosAffectSpeed(RoadVehicle *v, byte old_z)
+static void RoadZPosAffectSpeed(RoadVehicle *v, int old_z)
 {
 	if (old_z == v->z_pos || _settings_game.vehicle.roadveh_acceleration_model != AM_ORIGINAL) return;
 
@@ -875,14 +886,14 @@ static Trackdir RoadFindPathToDest(RoadVehicle *v, TileIndex tile, DiagDirection
 	TrackdirBits trackdirs = TrackStatusToTrackdirBits(ts);
 
 	if (IsTileType(tile, MP_ROAD)) {
-		if (IsRoadDepot(tile) && (!IsTileOwner(tile, v->owner) || GetRoadDepotDirection(tile) == enterdir || (GetRoadTypes(tile) & v->compatible_roadtypes) == 0)) {
+		if (IsRoadDepot(tile) && (!IsInfraTileUsageAllowed(VEH_ROAD, v->owner, tile) || GetRoadDepotDirection(tile) == enterdir || (GetRoadTypes(tile) & v->compatible_roadtypes) == 0)) {
 			/* Road depot owned by another company or with the wrong orientation */
 			trackdirs = TRACKDIR_BIT_NONE;
 		}
 	} else if (IsTileType(tile, MP_STATION) && IsStandardRoadStopTile(tile)) {
 		/* Standard road stop (drive-through stops are treated as normal road) */
 
-		if (!IsTileOwner(tile, v->owner) || GetRoadStopDir(tile) == enterdir || v->HasArticulatedPart()) {
+		if (!IsInfraTileUsageAllowed(VEH_ROAD, v->owner, tile) || GetRoadStopDir(tile) == enterdir || v->HasArticulatedPart()) {
 			/* different station owner or wrong orientation or the vehicle has articulated parts */
 			trackdirs = TRACKDIR_BIT_NONE;
 		} else {
@@ -1095,8 +1106,124 @@ static bool CanBuildTramTrackOnTile(CompanyID c, TileIndex t, RoadBits r)
 	return ret.Succeeded();
 }
 
+/* Calculate speed limit
+ *
+ * @pram v vehicle
+ * @pram t nearest town
+ *
+ * @note speed 100 = ~49km/h, ~31mph, ~(x/2-1)
+ *
+ * @return max speed which car can go at it's location
+ */
+uint16 CalcMaxRoadVehSpeed(RoadVehicle *v) {
+       //if (v->u.road.another_tile) {
+       if (v->another_tile) {
+               /* start - another tile */
+
+               /* not another tile anymore */
+               //v->u.road.another_tile = false;
+               v->another_tile = false;
+
+               bool in_town = false;
+               bool one_way = false;
+
+               HouseZonesBits grp = HZB_TOWN_EDGE;
+
+               if (_settings_game.vehicle.limit_vehicle_speed_in_towns) {
+                       Town *t;
+                       t = ClosestTownFromTile(v->tile, (uint)-1);
+                       grp = GetTownRadiusGroup(t, v->tile);
+
+                       if ( grp >= HZB_TOWN_OUTSKIRT) {
+                               in_town = true;
+                       }
+               }
+
+               if ( IsTileType(v->tile, MP_ROAD)
+                       && (IsNormalRoadTile(v->tile))
+                       && _settings_game.vehicle.max_veh_speed_in_towns_one_way)
+               {
+                       one_way = !(GetDisallowedRoadDirections(v->tile) == DRD_NONE);
+               }
+
+               if ( in_town && _settings_game.vehicle.limit_vehicle_speed_in_towns) {
+                       /* start - in city */
+
+                       if (one_way && _settings_game.vehicle.max_veh_speed_in_towns_one_way) {
+                               /* start - one-way road */
+                               /* check, that vehicle will don't go faster than it's max */
+                               if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_in_towns_one_way * 2) ) {
+                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_one_way * 2);
+
+                                       if(v->limit_speed) {
+                                               return v->limit_speed;
+                                       }
+                               }
+                       } else if (_settings_game.vehicle.max_veh_speed_in_towns_two_way) {
+                               /* start - two-way road */
+                               /* check, that vehicle will don't go faster than it's max */
+                               if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_in_towns_two_way * 2) ) {
+                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_two_way * 2);
+
+                                       if (v->limit_speed) {
+                                               return v->limit_speed;
+                                       }
+                               }
+                       }
+
+                       /* end - in city*/
+               } else {
+                       /* start - outside city */
+
+                       if (_settings_game.vehicle.limit_vehicle_speed_outside_towns) {
+                               /* one-way or two-way road */
+                               if (one_way && _settings_game.vehicle.max_veh_speed_out_towns_one_way) {
+                                       /* start - one-way road */
+                                       /* check, that vehicle will don't go faster than it's max */
+                                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_out_towns_one_way * 2) ) {
+                                               v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_one_way * 2);
+
+                                               if (v->limit_speed) {
+                                                       return v->limit_speed;
+                                               }
+                                       }
+                               } else if ( _settings_game.vehicle.max_veh_speed_out_towns_two_way ) {
+                                       /* start - two-way road */
+                                       /* check, that vehicle will don't go faster than it's max */
+                                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_out_towns_two_way * 2) ) {
+                                               v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_two_way * 2);
+
+                                               if (v->limit_speed) {
+                                                       return v->limit_speed;
+                                               }
+                                       }
+                               }
+                       }
+                       /* end - outside city */
+               }
+
+               /* end - another tile */
+
+               if (v->state == RVSB_WORMHOLE && _settings_game.vehicle.limit_vehicle_speed_tunnel_bridge) {
+                       /* start - tunnels and bridges */
+                       /* check, that vehicle will don't go faster than it's max */
+                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_tunnel_bridge * 2) ) {
+                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_tunnel_bridge * 2);
+                                       if (v->limit_speed) {
+                                               return v->limit_speed;
+                                       }
+                       }
+               } else if (v->limit_speed && v->state != RVSB_WORMHOLE) {
+                       return v->limit_speed;
+               }
+       }
+       v->limit_speed = v->vcache.cached_max_speed;
+       return v->limit_speed;
+}
+
 static bool IndividualRoadVehicleController(RoadVehicle *v, const RoadVehicle *prev)
 {
+
 	if (v->overtaking != 0)  {
 		if (IsTileType(v->tile, MP_STATION)) {
 			/* Force us to be not overtaking! */
@@ -1140,7 +1267,7 @@ static bool IndividualRoadVehicleController(RoadVehicle *v, const RoadVehicle *p
 		v->x_pos = gp.x;
 		v->y_pos = gp.y;
 		VehicleUpdatePosition(v);
-		if ((v->vehstatus & VS_HIDDEN) == 0) VehicleUpdateViewport(v, true);
+		if (v->IsDrawn()) VehicleUpdateViewport(v, true);
 		return true;
 	}
 
@@ -1232,6 +1359,12 @@ again:
 		int x = TileX(tile) * TILE_SIZE + rdp[start_frame].x;
 		int y = TileY(tile) * TILE_SIZE + rdp[start_frame].y;
 
+		if (v->tile != v->last_tile) {
+			v->another_tile = true;
+			v->last_tile = v->tile;
+		}
+	v->limit_speed_pass = CalcMaxRoadVehSpeed(v);
+
 		Direction new_dir = RoadVehGetSlidingDirection(v, x, y);
 		if (v->IsFrontEngine()) {
 			Vehicle *u = RoadVehFindCloseTo(v, x, y, new_dir);
@@ -1287,6 +1420,9 @@ again:
 			v->direction = new_dir;
 			if (_settings_game.vehicle.roadveh_acceleration_model == AM_ORIGINAL) v->cur_speed -= v->cur_speed >> 2;
 		}
+//egyik lenyeg
+		v->cur_speed = min(v->cur_speed, CalcMaxRoadVehSpeed(v));
+
 		v->x_pos = x;
 		v->y_pos = y;
 		VehicleUpdatePosition(v);
@@ -1389,12 +1525,11 @@ again:
 			/* In case an RV is stopped in a road stop, why not try to load? */
 			if (v->cur_speed == 0 && IsInsideMM(v->state, RVSB_IN_DT_ROAD_STOP, RVSB_IN_DT_ROAD_STOP_END) &&
 					v->current_order.ShouldStopAtStation(v, GetStationIndex(v->tile)) &&
-					v->owner == GetTileOwner(v->tile) && !v->current_order.IsType(OT_LEAVESTATION) &&
+					IsInfraTileUsageAllowed(VEH_ROAD, v->owner, v->tile) && !v->current_order.IsType(OT_LEAVESTATION) &&
 					GetRoadStopType(v->tile) == (v->IsBus() ? ROADSTOP_BUS : ROADSTOP_TRUCK)) {
 				Station *st = Station::GetByTile(v->tile);
-				v->last_station_visited = st->index;
 				RoadVehArrivesAt(v, st);
-				v->BeginLoading();
+				v->BeginLoading(st->index);
 			}
 			return false;
 		}
@@ -1423,7 +1558,7 @@ again:
 			_road_stop_stop_frame[v->state - RVSB_IN_ROAD_STOP + (_settings_game.vehicle.road_side << RVS_DRIVE_SIDE)] == v->frame) ||
 			(IsInsideMM(v->state, RVSB_IN_DT_ROAD_STOP, RVSB_IN_DT_ROAD_STOP_END) &&
 			v->current_order.ShouldStopAtStation(v, GetStationIndex(v->tile)) &&
-			v->owner == GetTileOwner(v->tile) &&
+			IsInfraTileUsageAllowed(VEH_ROAD, v->owner, v->tile) &&
 			GetRoadStopType(v->tile) == (v->IsBus() ? ROADSTOP_BUS : ROADSTOP_TRUCK) &&
 			v->frame == RVC_DRIVE_THROUGH_STOP_FRAME))) {
 
@@ -1453,13 +1588,13 @@ again:
 			rs->SetEntranceBusy(false);
 			SetBit(v->state, RVS_ENTERED_STOP);
 
-			v->last_station_visited = st->index;
-
 			if (IsDriveThroughStopTile(v->tile) || (v->current_order.IsType(OT_GOTO_STATION) && v->current_order.GetDestination() == st->index)) {
 				RoadVehArrivesAt(v, st);
-				v->BeginLoading();
+				v->BeginLoading(st->index);
 				return false;
 			}
+
+			v->last_station_visited = st->index;
 		} else {
 			/* Vehicle is ready to leave a bay in a road stop */
 			if (rs->IsEntranceBusy()) {
@@ -1497,6 +1632,7 @@ again:
 	RoadZPosAffectSpeed(v, v->UpdateInclination(false, true));
 	return true;
 }
+
 
 static bool RoadVehController(RoadVehicle *v)
 {

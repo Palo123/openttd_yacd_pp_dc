@@ -19,10 +19,11 @@
  * @param tile the tile to search from.
  * @return the tile of the other end of the tunnel.
  */
-TileIndex GetOtherTunnelEnd(TileIndex tile)
+template <bool Tgeneric>
+typename TileIndexT<Tgeneric>::T GetOtherTunnelEnd(typename TileIndexT<Tgeneric>::T tile)
 {
 	DiagDirection dir = GetTunnelBridgeDirection(tile);
-	TileIndexDiff delta = TileOffsByDiagDir(dir);
+	TileIndexDiff delta = TileOffsByDiagDir<Tgeneric>(dir, MapOf(tile));
 	int z = GetTileZ(tile);
 
 	dir = ReverseDiagDir(dir);
@@ -36,7 +37,9 @@ TileIndex GetOtherTunnelEnd(TileIndex tile)
 
 	return tile;
 }
-
+/* instantiate */
+template TileIndex GetOtherTunnelEnd<false>(TileIndex tile);
+template GenericTileIndex GetOtherTunnelEnd<true>(GenericTileIndex tile);
 
 /**
  * Is there a tunnel in the way in the given direction?

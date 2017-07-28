@@ -175,6 +175,12 @@ static void LoadSpriteTables()
 	_palette_remap_grf[i] = (PAL_DOS != used_set->palette);
 	LoadGrfFile(used_set->files[GFT_LOGOS].filename, 4793, i++);
 
+	/* Yellow states graphic */
+	LoadGrfFile("PBS_4_Aspects.grf", SPR_PBS_YELLOW_SIGNALS, i++);
+
+	/* Blacktileset comlete all slopes. */
+	LoadGrfFile("flat_blacktiles.grf", SPR_FLAT_BLACKTILES, i++);
+
 	/*
 	 * Load additional sprites for climates other than temperate.
 	 * This overwrites some of the temperate sprites, such as foundations
@@ -189,8 +195,14 @@ static void LoadSpriteTables()
 		);
 	}
 
+	/* Load clipboard graphics */
+	LoadGrfFile("clipboard.grf", SPR_CLIPBOARD_BASE, i++);
+
 	/* Initialize the unicode to sprite mapping table */
 	InitializeUnicodeGlyphMap();
+
+	/* Load traffic lights graphics. */
+	LoadGrfFile("trafficlights.grf", SPR_TRAFFICLIGHTS_BASE, i++);
 
 	/*
 	 * Load the base NewGRF with OTTD required graphics as first NewGRF.

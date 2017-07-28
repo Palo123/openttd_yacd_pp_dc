@@ -115,6 +115,25 @@ enum DiagDirDiff {
 /** Allow incrementing of DiagDirDiff variables */
 DECLARE_POSTFIX_INCREMENT(DiagDirDiff)
 
+/** Represents transformations to rotate/reflect directions. */
+enum DirTransformation {
+	DTR_BEGIN           = 0, ///< Used for iterations.
+
+	DTR_IDENTITY        = 0, ///< Identity transformation (no tranformation at all).
+	DTR_ROTATE_90_R     = 1, ///< Rotate by 90 degree clockwise.
+	DTR_ROTATE_180      = 2, ///< Rotate by 180 degree.
+	DTR_ROTATE_90_L     = 3, ///< Rotate by 90 degree counterclockwise.
+
+	DTR_REFLECT_NE_SW   = 4, ///< Reflect in respect to a Northeast-Southwest axis.
+	DTR_REFLECT_W_E     = 5, ///< Reflect in respect to a West-East axis.
+	DTR_REFLECT_NW_SE   = 6, ///< Reflect in respect to a Northwest-Southeast axis.
+	DTR_REFLECT_N_S     = 7, ///< Reflect in respect to a North-South axis.
+
+	DTR_END             = 8, ///< Used for iterations.
+
+	DTR_ROTATION_MASK  = 0x03, ///< Rotation mask. The number formed by thiese bits tells how much to rotate object clockwise (in 90 degree units).
+	DTR_REFLECTION_BIT = 0x04, ///< Reflection bit. Indicates if to reflect object in respect to X-axis before rotating it.
+};
 
 /**
  * Enumeration for the two axis X and Y

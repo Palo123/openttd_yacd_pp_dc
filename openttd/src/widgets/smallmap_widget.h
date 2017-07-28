@@ -23,6 +23,7 @@ enum SmallMapWidgets {
 	WID_SM_CONTOUR,        ///< Button to select the contour view (height map).
 	WID_SM_VEHICLES,       ///< Button to select the vehicles view.
 	WID_SM_INDUSTRIES,     ///< Button to select the industries view.
+	WID_SM_ROUTE_LINKS,    ///< Button to select the route link view.
 	WID_SM_ROUTES,         ///< Button to select the routes view.
 	WID_SM_VEGETATION,     ///< Button to select the vegetation view.
 	WID_SM_OWNERS,         ///< Button to select the owners view.

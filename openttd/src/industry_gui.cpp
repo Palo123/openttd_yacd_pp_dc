@@ -38,6 +38,7 @@
 #include "smallmap_gui.h"
 #include "widgets/dropdown_type.h"
 #include "widgets/industry_widget.h"
+#include "cargodest_gui.h"
 
 #include "table/strings.h"
 
@@ -109,7 +110,9 @@ static inline void GetAllCargoSuffixes(uint cb_offset, CargoSuffixType cst, cons
 	}
 }
 
-IndustryType _sorted_industry_types[NUM_INDUSTRYTYPES]; ///< Industry types sorted by name.
+IndustryType _sorted_industry_types[NUM_INDUSTRYTYPES];             ///< Industry types sorted by name.
+static SmallVector<IndustryType, 8> _sorted_enabled_industry_types; ///< Subgroup of enabled (and sorted) industry types.
+static uint64 _industry_filter_enabled;                             ///< Bit mask of the enabled industry types.
 
 /** Sort industry types by their name. */
 static int CDECL IndustryTypeNameSorter(const IndustryType *a, const IndustryType *b)
@@ -142,6 +145,17 @@ void SortIndustryTypes()
 
 	/* Sort industry types by name. */
 	QSortT(_sorted_industry_types, NUM_INDUSTRYTYPES, &IndustryTypeNameSorter);
+
+	/* Build the bitmask/collection of all the enabled industry types */
+	_industry_filter_enabled = 0;
+	_sorted_enabled_industry_types.Clear();
+	for (IndustryType i = 0; i < NUM_INDUSTRYTYPES; i++) {
+		IndustryType ind = _sorted_industry_types[i];
+		if (GetIndustrySpec(ind)->enabled) {
+			SetBit(_industry_filter_enabled, ind);
+			*_sorted_enabled_industry_types.Append() = ind;
+		}
+	}
 }
 
 /**
@@ -666,8 +680,11 @@ class IndustryViewWindow : public Window
 	int production_offset_y;  ///< The offset of the production texts/buttons
 	int info_height;          ///< Height needed for the #WID_IV_INFO panel
 
+	CargoDestinationList dest_list; ///< Sorted list of demand destinations.
+	int dest_list_top;        ///< Top coordinate of the destination list.
+
 public:
-	IndustryViewWindow(const WindowDesc *desc, WindowNumber window_number) : Window()
+	IndustryViewWindow(const WindowDesc *desc, WindowNumber window_number) : Window(), dest_list(Industry::Get(window_number))
 	{
 		this->flags |= WF_DISABLE_VP_SCROLL;
 		this->editbox_line = IL_NONE;
@@ -760,6 +777,14 @@ public:
 
 			SetDParam(0, i->produced_cargo[j]);
 			SetDParam(1, i->last_month_production[j]);
+
+			/* Show values corresponding to show_orig_productions settings. */
+//			if (_settings_game.economy.show_orig_productions) {
+//				SetDParam(1, 8 * i->production_rate[j]);
+//			} else {
+//				SetDParam(1, 8 * i->production_rate[j] * _settings_game.economy.day_length_factor);
+//			}
+
 			SetDParamStr(2, cargo_suffix[j]);
 			SetDParam(3, ToPercent8(i->last_month_pct_transported[j]));
 			uint x = left + WD_FRAMETEXT_LEFT + (this->editable == EA_RATE ? SETTING_BUTTON_WIDTH + 10 : 0);
@@ -805,6 +830,10 @@ public:
 				}
 			}
 		}
+
+		this->dest_list_top = y;
+		y = this->dest_list.DrawList(left, right, y);
+
 		return y + WD_FRAMERECT_BOTTOM;
 	}
 
@@ -824,6 +853,13 @@ public:
 			case WID_IV_INFO: {
 				Industry *i = Industry::Get(this->window_number);
 				InfoLine line = IL_NONE;
+				NWidgetBase *nwi = this->GetWidget<NWidgetBase>(widget);
+
+				/* Test for click on destination list. */
+				if (pt.y > this->dest_list_top) {
+					this->dest_list.OnClick(pt.y - this->dest_list_top);
+					return;
+				}
 
 				switch (this->editable) {
 					case EA_NONE: break;
@@ -848,7 +884,6 @@ public:
 				}
 				if (line == IL_NONE) return;
 
-				NWidgetBase *nwi = this->GetWidget<NWidgetBase>(widget);
 				int left = nwi->pos_x + WD_FRAMETEXT_LEFT;
 				int right = nwi->pos_x + nwi->current_x - 1 - WD_FRAMERECT_RIGHT;
 				if (IsInsideMM(pt.x, left, left + SETTING_BUTTON_WIDTH)) {
@@ -976,6 +1011,13 @@ public:
 		} else {
 			this->editable = EA_NONE;
 		}
+
+		/* Rebuild destination list if data is not zero, otherwise just resort. */
+		if (data != 0) {
+			this->dest_list.InvalidateData();
+		} else {
+			this->dest_list.Resort();
+		}
 	}
 
 	virtual bool IsNewGRFInspectable() const
@@ -1037,6 +1079,32 @@ void ShowIndustryViewWindow(int industry)
 	AllocateWindowDescFront<IndustryViewWindow>(&_industry_view_desc, industry);
 }
 
+/**
+ * Make a horizontal row of industry type buttons, starting at widget #WID_ID_TYPE_START.
+ * @param biggest_index Pointer to store biggest used widget number of the buttons.
+ * @return Horizontal row.
+ */
+static NWidgetBase *IndustryTypeWidgets(int *biggest_index)
+{
+	NWidgetHorizontal *container = new NWidgetHorizontal();
+
+	for (size_t i = 0; i < _sorted_enabled_industry_types.Length(); i++) {
+		IndustryType ind = _sorted_enabled_industry_types[i];
+		const IndustrySpec *indsp = GetIndustrySpec(ind);
+		assert(indsp->enabled);
+
+		NWidgetBackground *panel = new NWidgetBackground(WWT_PANEL, COLOUR_BROWN, WID_ID_TYPE_START + i);
+		panel->SetMinimalSize(16, 11);
+		panel->SetResize(0, 0);
+		panel->SetFill(0, 1);
+		panel->SetDataTip(0, STR_INDUSTRY_DIRECTORY_USE_CTRL_TO_SELECT_MORE);
+		container->Add(panel);
+	}
+
+	*biggest_index = WID_ID_TYPE_START + _sorted_enabled_industry_types.Length();
+	return container;
+}
+
 /** Widget definition of the industry directory gui */
 static const NWidgetPart _nested_industry_directory_widgets[] = {
 	NWidget(NWID_HORIZONTAL),
@@ -1050,7 +1118,9 @@ static const NWidgetPart _nested_industry_directory_widgets[] = {
 			NWidget(NWID_HORIZONTAL),
 				NWidget(WWT_TEXTBTN, COLOUR_BROWN, WID_ID_DROPDOWN_ORDER), SetDataTip(STR_BUTTON_SORT_BY, STR_TOOLTIP_SORT_ORDER),
 				NWidget(WWT_DROPDOWN, COLOUR_BROWN, WID_ID_DROPDOWN_CRITERIA), SetDataTip(STR_JUST_STRING, STR_TOOLTIP_SORT_CRITERIA),
-				NWidget(WWT_PANEL, COLOUR_BROWN), SetResize(1, 0), EndContainer(),
+				NWidget(WWT_PANEL, COLOUR_BROWN), SetMinimalSize(25, 11), SetResize(1, 0), EndContainer(),
+				NWidget(WWT_PUSHBTN, COLOUR_BROWN, WID_ID_TYPESALL), SetMinimalSize(16, 11), SetDataTip(0x0, STR_INDUSTRY_DIRECTORY_SELECT_ALL_TYPES), SetFill(0, 1),
+				NWidgetFunction(IndustryTypeWidgets),
 			EndContainer(),
 			NWidget(WWT_PANEL, COLOUR_BROWN, WID_ID_INDUSTRY_LIST), SetDataTip(0x0, STR_INDUSTRY_DIRECTORY_LIST_CAPTION), SetResize(1, 1), SetScrollbar(WID_ID_SCROLLBAR), EndContainer(),
 		EndContainer(),
@@ -1072,6 +1142,7 @@ protected:
 	/* Runtime saved values */
 	static Listing last_sorting;
 	static const Industry *last_industry;
+	static uint64 industry_filter;
 
 	/* Constants for sorting stations */
 	static const StringID sorter_names[];
@@ -1088,7 +1159,9 @@ protected:
 
 			const Industry *i;
 			FOR_ALL_INDUSTRIES(i) {
-				*this->industries.Append() = i;
+				if (HasBit(this->industry_filter, i->type)) {
+					*this->industries.Append() = i;
+				}
 			}
 
 			this->industries.Compact();
@@ -1220,11 +1293,38 @@ protected:
 		}
 	}
 
+	/**
+	 * Enable/disable all industry type filters.
+	 * @param enable True to lower and enable all industry type filters, false to raise/disable.
+	 */
+	void ToggleIndustryFilters(bool enable)
+	{
+		for (size_t i = 0; i < _sorted_enabled_industry_types.Length(); i++) {
+			NWidgetBackground* panel = this->GetWidget<NWidgetBackground>(WID_ID_TYPE_START + i);
+			panel->SetLowered(enable);
+		}
+
+		this->industry_filter = enable ? _industry_filter_enabled : 0;
+	}
+
 public:
 	IndustryDirectoryWindow(const WindowDesc *desc, WindowNumber number) : Window()
 	{
 		this->CreateNestedTree(desc);
 		this->vscroll = this->GetScrollbar(WID_ID_SCROLLBAR);
+
+		// if the industry filter has disabled industries selected
+		// it means the industry set has changed, so we need to re-initialize
+		if (this->industry_filter & ~_industry_filter_enabled) {
+			this->industry_filter = _industry_filter_enabled;
+		}
+
+		for (size_t i = 0; i < _sorted_enabled_industry_types.Length(); i++) {
+			IndustryType ind = _sorted_enabled_industry_types[i];
+			if (HasBit(this->industry_filter, ind)) {
+				this->LowerWidget(WID_ID_TYPE_START + i);
+			}
+		}
 
 		this->industries.SetListing(this->last_sorting);
 		this->industries.SetSortFuncs(IndustryDirectoryWindow::sorter_funcs);
@@ -1266,6 +1366,24 @@ public:
 				}
 				break;
 			}
+
+			case WID_ID_TYPESALL: {
+				int it_ofst = this->IsWidgetLowered(widget) ? 2 : 1;
+				DrawString(r.left + it_ofst, r.right + it_ofst, r.top + it_ofst, STR_ABBREV_ALL, TC_BLACK, SA_HOR_CENTER);
+				break;
+			}
+
+			default:
+				if (widget >= WID_ID_TYPE_START)
+				{
+					IndustryType ind = _sorted_enabled_industry_types[widget - WID_ID_TYPE_START];
+					const IndustrySpec *indsp = GetIndustrySpec(ind);
+					int it_ofst = HasBit(this->industry_filter, ind) ? 2 : 1;;
+					GfxFillRect(r.left + it_ofst, r.top + it_ofst, r.right - 2 + it_ofst, r.bottom - 2 + it_ofst, indsp->map_colour);
+					TextColour tc = GetContrastColour(indsp->map_colour);
+					DrawString(r.left + it_ofst, r.right + it_ofst, r.top + it_ofst, indsp->abbrev, tc, SA_HOR_CENTER);
+				}
+				break;
 		}
 	}
 
@@ -1303,6 +1421,25 @@ public:
 				*size = maxdim(*size, d);
 				break;
 			}
+
+			case WID_ID_TYPESALL: {
+				Dimension d = GetStringBoundingBox(STR_ABBREV_ALL);
+				d.width  += padding.width + 2;
+				d.height += padding.height;
+				*size = maxdim(*size, d);
+				break;
+			}
+
+			default:
+				if (widget >= WID_ID_TYPE_START) {
+					IndustryType ind = _sorted_enabled_industry_types[widget - WID_ID_TYPE_START];
+					const IndustrySpec* indsp = GetIndustrySpec(ind);
+					Dimension d = GetStringBoundingBox(indsp->abbrev);
+					d.width  += padding.width + 2;
+					d.height += padding.height;
+					*size = maxdim(*size, d);
+				}
+				break;
 		}
 	}
 
@@ -1330,6 +1467,34 @@ public:
 				}
 				break;
 			}
+
+			case WID_ID_TYPESALL: {
+				ToggleIndustryFilters(true);
+
+				this->industries.ForceRebuild();
+				this->BuildSortIndustriesList();
+				this->SetDirty();
+				break;
+			}
+
+			default:
+				if (widget >= WID_ID_TYPE_START)
+				{
+					IndustryType ind = _sorted_enabled_industry_types[widget - WID_ID_TYPE_START];
+					if (_ctrl_pressed) {
+						ToggleBit(this->industry_filter, ind);
+						this->ToggleWidgetLoweredState(widget);
+					} else {
+						ToggleIndustryFilters(false);
+						SetBit(this->industry_filter, ind);
+						this->LowerWidget(widget);
+					}
+
+					this->industries.ForceRebuild();
+					this->BuildSortIndustriesList();
+					this->SetDirty();
+				}
+				break;
 		}
 	}
 
@@ -1376,6 +1541,7 @@ public:
 
 Listing IndustryDirectoryWindow::last_sorting = {false, 0};
 const Industry *IndustryDirectoryWindow::last_industry = NULL;
+uint64 IndustryDirectoryWindow::industry_filter = UINT64_MAX;
 
 /* Available station sorting functions. */
 GUIIndustryList::SortFunction * const IndustryDirectoryWindow::sorter_funcs[] = {

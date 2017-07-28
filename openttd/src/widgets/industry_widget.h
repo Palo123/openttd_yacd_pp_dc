@@ -36,6 +36,8 @@ enum IndustryDirectoryWidgets {
 	WID_ID_DROPDOWN_CRITERIA, ///< Dropdown for the criteria of the sort.
 	WID_ID_INDUSTRY_LIST,     ///< Industry list.
 	WID_ID_SCROLLBAR,         ///< Scrollbar of the list.
+	WID_ID_TYPESALL,          ///< Toggle all industry types button.
+	WID_ID_TYPE_START,        ///< Widget numbers used for list of industry types (not present in _industry_directory_widgets).
 };
 
 /** Widgets of the #IndustryCargoesWindow class */

@@ -24,6 +24,8 @@
 #include "roadstop_base.h"
 #include "industry.h"
 #include "core/random_func.hpp"
+#include "cargodest_func.h"
+#include "overlay_cmd.h"
 
 #include "table/strings.h"
 
@@ -93,6 +95,9 @@ Station::~Station()
 		if (v->last_station_visited == this->index) {
 			v->last_station_visited = INVALID_STATION;
 		}
+		if (v->last_station_loaded == this->index) {
+			v->last_station_loaded = INVALID_STATION;
+		}
 	}
 
 	/* Clear the persistent storage. */
@@ -104,6 +109,10 @@ Station::~Station()
 	} else {
 		InvalidateWindowData(WC_STATION_LIST, this->owner, 0);
 	}
+
+	if (Overlays::Instance()->HasStation(Station::Get(this->index))) {
+		Overlays::Instance()->ToggleStation(Station::Get(this->index));
+	};
 
 	DeleteWindowById(WC_STATION_VIEW, index);
 
@@ -118,8 +127,22 @@ Station::~Station()
 	}
 
 	CargoPacket::InvalidateAllFrom(this->index);
+	InvalidateStationRouteLinks(this);
 }
 
+bool Station::IsTileInCatchmentArea(const TileInfo* ti, CatchmentType type) const
+{
+	switch (type) {
+		case ACCEPTANCE:
+			return this->rect.PtInExtendedRect(TileX(ti->tile),TileY(ti->tile),this->GetCatchmentRadius());
+		case PRODUCTION:
+			return this->catchment.IsTileInCatchment(ti->tile);
+		case INDUSTRY:
+			return false;
+		default:
+			NOT_REACHED();
+	}
+}
 
 /**
  * Invalidating of the JoinStation window has to be done
@@ -169,6 +192,43 @@ void Station::AddFacility(StationFacility new_facility_bit, TileIndex facil_xy)
 }
 
 /**
+ * Called when happen ctrl+click on row in StationView.
+ * Delete this item from current acceptance of production.
+ * Two parts: when click first time just stop get new production from indestries.
+ * On second click clear that cargo list on this station.
+ * @param cargo_type_to_drop CargoID that need to be dropped on this station.
+ * @param waitind Click happen in WaitingCargo list or not.
+ */
+void Station::ChangeAcceptance(CargoID cargo_type, bool waiting)
+{
+	GoodsEntry &ge = this->goods[cargo_type];
+	
+	if (waiting) {
+		if (HasBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP)) {
+			/* Stop getting new cargoes from industry around*/
+			ClrBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP);
+			ge.time_since_pickup = 255;
+			ge.last_speed = 0;
+			ge.last_age = 255;
+		}
+		else {
+			/* Clear this cargo list. Station will be completely empty of this type of cargo. */
+			ge.cargo.Truncate(0);
+		}
+	}
+	else {
+		if (!HasBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP)) {
+			/* Start getting new cargoes from industry around */
+			SetBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP);
+			ge.time_since_pickup = 100; // Some penalties: vehicle on station is still good thing.
+			ge.last_speed = 1;
+			ge.last_age = 50;
+			ge.rating = ge.rating * 0.8;
+		}
+	}
+}
+
+/**
  * Marks the tiles of the station as dirty.
  *
  * @ingroup dirty
@@ -197,6 +257,18 @@ void Station::MarkTilesDirty(bool cargo_change) const
 			tile += TileDiffXY(1, 0);
 		}
 		tile += TileDiffXY(-w, 1);
+	}
+}
+
+void Station::MarkAcceptanceTilesDirty() const
+{
+	Rect rec = this->GetCatchmentRect();
+	TileIndex top_left = TileXY(rec.left, rec.top);
+	int width = rec.right - rec.left + 1;
+	int height = rec.bottom - rec.top + 1;
+
+	TILE_AREA_LOOP(tile, TileArea(top_left, width, height) ) {
+		MarkTileDirtyByTile(tile);
 	}
 }
 
@@ -385,6 +457,23 @@ bool StationRect::PtInExtendedRect(int x, int y, int distance) const
 			this->top - distance <= y && y <= this->bottom + distance;
 }
 
+/**
+ * Determines whether a tile area intersects the station rectangle with a given offset.
+ * @param area The tile area to test.
+ * @param distance Offset the station rect is grown on all sides (L1 norm).
+ * @return True if the tile area intersects with the station rectangle.
+ */
+bool StationRect::AreaInExtendedRect(const TileArea& area, int distance) const
+{
+	int area_left = TileX(area.tile);
+	int area_right = area_left + area.w;
+	int area_top = TileY(area.tile);
+	int area_bottom = area_top + area.h;
+
+	return this->left - distance <= area_right && area_left <= this->right + distance &&
+			this->top - distance <= area_bottom && area_top <= this->bottom + distance;
+}
+
 bool StationRect::IsEmpty() const
 {
 	return this->left == 0 || this->left > this->right || this->top > this->bottom;
@@ -540,4 +629,90 @@ Money AirportMaintenanceCost(Owner owner)
 	}
 	/* 3 bits fraction for the maintenance cost factor. */
 	return total_cost >> 3;
+}
+
+
+/************************************************************************/
+/*                   StationCatchment implementation                    */
+/************************************************************************/
+
+StationCatchment::StationCatchment()
+{
+}
+
+/**
+ * Determines whether a given point (x, y) is within the station catchment area
+ * @param tile TileIndex to test
+ * @return true if the point is within the station catchment area
+ */
+bool StationCatchment::IsTileInCatchment(TileIndex tile) const
+{
+	return this->catchmentTiles.find(tile) != this->catchmentTiles.end();
+}
+
+bool StationCatchment::IsEmpty() const
+{
+	return this->catchmentTiles.empty();
+}
+
+void StationCatchment::BeforeAddTile(TileIndex tile, uint catchmentRadius)
+{
+	int x = TileX(tile);
+	int y = TileY(tile);
+	TileIndex top_left = TileXY(max<int>(x - catchmentRadius,0),max<int>(y - catchmentRadius, 0));
+	int w = min<int>(x + catchmentRadius, MapMaxX()) - TileX(top_left) + 1;
+	int h = min<int>(y + catchmentRadius, MapMaxY()) - TileY(top_left) + 1;
+	if (IsEmpty()) {
+		/* we are adding the first station tile */
+		TILE_AREA_LOOP(t, TileArea(top_left, w, h) ) {
+			std::set<TileIndex> fromSet;
+			fromSet.insert(tile);
+			this->catchmentTiles[t] = fromSet;
+		}
+	} else {		
+		TILE_AREA_LOOP(t, TileArea(top_left, w, h) ) {
+			std::map<TileIndex, std::set<TileIndex> >::iterator found = this->catchmentTiles.find(t);
+			if ( found == this->catchmentTiles.end()) {
+				std::set<TileIndex> fromSet;
+				fromSet.insert(tile);
+				this->catchmentTiles[t] = fromSet;
+			} else if ((*found).second.find(tile) == (*found).second.end()) {
+				(*found).second.insert(tile);
+			}
+		}
+	}
+}
+
+void StationCatchment::BeforeAddRect(TileIndex tile, int w, int h, uint catchmentRadius)
+{
+	TILE_AREA_LOOP(t, TileArea(tile, w, h) ) {
+		this->BeforeAddTile(t, catchmentRadius);
+	}
+}
+
+void StationCatchment::AfterRemoveTile(TileIndex tile, uint catchmentRadius)
+{
+	int x = TileX(tile);
+	int y = TileY(tile);
+	TileIndex top_left = TileXY(max<int>(x - catchmentRadius,0),max<int>(y - catchmentRadius, 0));
+	int w = min<int>(x + catchmentRadius, MapMaxX()) - TileX(top_left) + 1;
+	int h = min<int>(y + catchmentRadius, MapMaxY()) - TileY(top_left) + 1;
+	TILE_AREA_LOOP(t, TileArea(top_left, w, h)) {
+		std::map<TileIndex, std::set<TileIndex> >::iterator found = this->catchmentTiles.find(t);
+		assert(found != this->catchmentTiles.end());
+		std::set<TileIndex>::iterator stTileIter = (*found).second.find(tile);
+		assert(stTileIter != (*found).second.end());
+		(*found).second.erase(stTileIter);
+		if ((*found).second.empty()) {
+			// tile t is no longer in StationCatchment
+			this->catchmentTiles.erase(found);
+		}
+	}
+}
+
+void StationCatchment::AfterRemoveRect(TileIndex tile, int w, int h, uint catchmentRadius)
+{
+	TILE_AREA_LOOP(t, TileArea(tile, w, h)) {
+		this->AfterRemoveTile(t, catchmentRadius);
+	}
 }

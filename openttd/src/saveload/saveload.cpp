@@ -41,6 +41,9 @@
 #include "../string_func.h"
 #include "../fios.h"
 #include "../error.h"
+#include "../cargodest_base.h"
+
+#include "../aaa_template_vehicle.h" //MYGUI
 
 #include "table/strings.h"
 
@@ -245,7 +248,7 @@
  *  179   24810
  *  180   24998   1.3.x
  */
-extern const uint16 SAVEGAME_VERSION = 180; ///< Current savegame version of OpenTTD.
+extern const uint16 SAVEGAME_VERSION = 206; ///< Current savegame version of OpenTTD.
 
 SavegameType _savegame_type; ///< type of savegame we are loading
 
@@ -426,7 +429,10 @@ extern const ChunkHandler _autoreplace_chunk_handlers[];
 extern const ChunkHandler _labelmaps_chunk_handlers[];
 extern const ChunkHandler _airport_chunk_handlers[];
 extern const ChunkHandler _object_chunk_handlers[];
+extern const ChunkHandler _routelink_chunk_handlers[];
 extern const ChunkHandler _persistent_storage_chunk_handlers[];
+extern const ChunkHandler _template_replacement_chunk_handlers[]; //MYGUI
+extern const ChunkHandler _template_vehicle_chunk_handlers[]; //MYGUI
 
 /** Array of all chunks in a savegame, \c NULL terminated. */
 static const ChunkHandler * const _chunk_handlers[] = {
@@ -460,7 +466,10 @@ static const ChunkHandler * const _chunk_handlers[] = {
 	_labelmaps_chunk_handlers,
 	_airport_chunk_handlers,
 	_object_chunk_handlers,
+	_routelink_chunk_handlers,
 	_persistent_storage_chunk_handlers,
+	_template_replacement_chunk_handlers,			// MYGUI
+	_template_vehicle_chunk_handlers,				// MYGUI
 	NULL,
 };
 
@@ -1207,6 +1216,7 @@ static size_t ReferenceToInt(const void *obj, SLRefType rt)
 	switch (rt) {
 		case REF_VEHICLE_OLD: // Old vehicles we save as new ones
 		case REF_VEHICLE:   return ((const  Vehicle*)obj)->index + 1;
+		case REF_TEMPLATE_VEHICLE: return ((const TemplateVehicle*)obj)->index + 1;	// MYGUI
 		case REF_STATION:   return ((const  Station*)obj)->index + 1;
 		case REF_TOWN:      return ((const     Town*)obj)->index + 1;
 		case REF_ORDER:     return ((const    Order*)obj)->index + 1;
@@ -1214,6 +1224,7 @@ static size_t ReferenceToInt(const void *obj, SLRefType rt)
 		case REF_ENGINE_RENEWS: return ((const       EngineRenew*)obj)->index + 1;
 		case REF_CARGO_PACKET:  return ((const       CargoPacket*)obj)->index + 1;
 		case REF_ORDERLIST:     return ((const         OrderList*)obj)->index + 1;
+		case REF_ROUTE_LINK:    return ((const         RouteLink*)obj)->index + 1;
 		case REF_STORAGE:       return ((const PersistentStorage*)obj)->index + 1;
 		default: NOT_REACHED();
 	}
@@ -1264,6 +1275,10 @@ static void *IntToReference(size_t index, SLRefType rt)
 			if (Vehicle::IsValidID(index)) return Vehicle::Get(index);
 			SlErrorCorrupt("Referencing invalid Vehicle");
 
+		case REF_TEMPLATE_VEHICLE:						// MYGUI
+			if (TemplateVehicle::IsValidID(index)) return TemplateVehicle::Get(index);
+			SlErrorCorrupt("Referencing invalid TemplateVehicle");
+
 		case REF_STATION:
 			if (Station::IsValidID(index)) return Station::Get(index);
 			SlErrorCorrupt("Referencing invalid Station");
@@ -1283,6 +1298,10 @@ static void *IntToReference(size_t index, SLRefType rt)
 		case REF_CARGO_PACKET:
 			if (CargoPacket::IsValidID(index)) return CargoPacket::Get(index);
 			SlErrorCorrupt("Referencing invalid CargoPacket");
+
+		case REF_ROUTE_LINK:
+			if (RouteLink::IsValidID(index)) return RouteLink::Get(index);
+			SlErrorCorrupt("Referencing invalid RouteLink");
 
 		case REF_STORAGE:
 			if (PersistentStorage::IsValidID(index)) return PersistentStorage::Get(index);

@@ -17,11 +17,18 @@
 #include "cargopacket.h"
 #include "industry_type.h"
 #include "newgrf_storage.h"
+#include "cargodest_type.h"
+#include "core/smallvec_type.hpp"
+#include <map>
+#include <set>
 
 typedef Pool<BaseStation, StationID, 32, 64000> StationPool;
 extern StationPool _station_pool;
 
 static const byte INITIAL_STATION_RATING = 175;
+
+/** List of RouteLinks. */
+typedef std::list<RouteLink *> RouteLinkList;
 
 /**
  * Stores station stats for a single cargo.
@@ -74,7 +81,8 @@ struct GoodsEntry {
 		time_since_pickup(255),
 		rating(INITIAL_STATION_RATING),
 		last_speed(0),
-		last_age(255)
+		last_age(255),
+		cargo_counter(0)
 	{}
 
 	byte acceptance_pickup; ///< Status of this cargo, see #GoodsEntryStatus.
@@ -106,7 +114,9 @@ struct GoodsEntry {
 	byte last_age;
 
 	byte amount_fract;      ///< Fractional part of the amount in the cargo list
+	uint16 cargo_counter;   ///< Update timer for the packets' next hop
 	StationCargoList cargo; ///< The cargo packets of cargo waiting in this station
+	RouteLinkList routes;   ///< List of originating route links
 
 	/**
 	 * Reports whether a vehicle has ever tried to load the cargo at this station.
@@ -116,11 +126,32 @@ struct GoodsEntry {
 	bool HasVehicleEverTriedLoading() const { return this->last_speed != 0; }
 };
 
+enum CatchmentType {
+	ACCEPTANCE = 0,
+	PRODUCTION = 1,
+	INDUSTRY = 2
+};
+
+struct StationCatchment {
+	std::map<TileIndex, std::set<TileIndex> > catchmentTiles;
+public:
+	StationCatchment();
+	void MakeEmpty();
+	bool IsTileInCatchment(TileIndex tile) const;
+	bool IsEmpty() const;
+	void BeforeAddTile(TileIndex tile, uint catchmentRadius);
+	void BeforeAddRect(TileIndex tile, int w, int h, uint catchmentRadius);
+	void AfterRemoveTile(TileIndex tile, uint catchmentRadius);
+	void AfterRemoveRect(TileIndex tile, int w, int h, uint catchmentRadius);
+};
+
 /** All airport-related information. Only valid if tile != INVALID_TILE. */
 struct Airport : public TileArea {
 	Airport() : TileArea(INVALID_TILE, 0, 0) {}
 
 	uint64 flags;       ///< stores which blocks on the airport are taken. was 16 bit earlier on, then 32
+        uint64 flags2;      ///< additional stores which blocks on the airport are taken.
+        byte num_circle;    ///< stores how many aircrafts are in circle area of airport
 	byte type;          ///< Type of this airport, @see AirportTypes
 	byte layout;        ///< Airport layout number.
 	Direction rotation; ///< How this airport is rotated.
@@ -236,6 +267,12 @@ struct Airport : public TileArea {
 		return num;
 	}
 
+	/** Get the number of hangars on this airport. */
+	inline byte GetMaxCircle(TileIndex tile) const
+	{
+		return this->GetSpec()->max_circle;
+	}
+
 private:
 	/**
 	 * Retrieve hangar information of a hangar at a given tile.
@@ -289,11 +326,14 @@ public:
 
 	IndustryVector industries_near; ///< Cached list of industries near the station that can accept cargo, @see DeliverGoodsToIndustry()
 
+	StationCatchment catchment;
+
 	Station(TileIndex tile = INVALID_TILE);
 	~Station();
 
 	void AddFacility(StationFacility new_facility_bit, TileIndex facil_xy);
-
+	void ChangeAcceptance(CargoID cargo_type, bool waiting);
+	
 	void MarkTilesDirty(bool cargo_change) const;
 
 	void UpdateVirtCoord();
@@ -304,6 +344,11 @@ public:
 	static void RecomputeIndustriesNearForAll();
 
 	uint GetCatchmentRadius() const;
+
+	bool IsTileInCatchmentArea(const TileInfo* ti, CatchmentType type) const;
+
+	void MarkAcceptanceTilesDirty() const;
+
 	Rect GetCatchmentRect() const;
 
 	/* virtual */ inline bool TileBelongsToRailStation(TileIndex tile) const

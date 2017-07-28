@@ -131,7 +131,11 @@ static TreeType GetRandomTreeType(TileIndex tile, uint seed)
 {
 	switch (_settings_game.game_creation.landscape) {
 		case LT_TEMPERATE:
-			return (TreeType)(seed * TREE_COUNT_TEMPERATE / 256 + TREE_TEMPERATE);
+			if (_settings_game.construction.snow_in_temperate) {
+				return (TreeType)(seed * TREE_COUNT_SUB_ARCTIC / 256 + TREE_SUB_ARCTIC);
+			} else {
+				return (TreeType)(seed * TREE_COUNT_TEMPERATE / 256 + TREE_TEMPERATE);
+			};
 
 		case LT_ARCTIC:
 			return (TreeType)(seed * TREE_COUNT_SUB_ARCTIC / 256 + TREE_SUB_ARCTIC);
@@ -264,9 +268,12 @@ void PlaceTreesRandomly()
 			/* The higher we get, the more trees we plant */
 			j = GetTileZ(tile) * 2;
 			/* Above snowline more trees! */
-			if (_settings_game.game_creation.landscape == LT_ARCTIC && ht > GetSnowLine()) j *= 3;
-			while (j--) {
-				PlaceTreeAtSameHeight(tile, ht);
+                               if (_settings_game.game_creation.landscape == LT_ARCTIC || (_settings_game.construction.snow_in_temperate && _settings_game.game_creation.landscape == LT_TEMPERATE)) {
+                                       if (ht > GetSnowLine()) {
+                                               PlaceTreeAtSameHeight(tile, ht);
+                                               PlaceTreeAtSameHeight(tile, ht);
+                                       };
+
 			}
 		}
 	} while (--i);
@@ -451,6 +458,9 @@ CommandCost CmdPlantTree(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 
 	if (cost.GetCost() == 0) {
 		return_cmd_error(msg);
 	} else {
+		if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+			cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+		}
 		return cost;
 	}
 }
@@ -467,6 +477,8 @@ static void DrawTile_Trees(TileInfo *ti)
 		case TREE_GROUND_ROUGH: DrawHillyLandTile(ti); break;
 		default: DrawGroundSprite(_clear_land_sprites_snow_desert[GetTreeDensity(ti->tile)] + SlopeToSpriteOffset(ti->tileh), PAL_NONE); break;
 	}
+
+	DrawOverlay(ti, MP_TREES);
 
 	/* Do not draw trees when the invisible trees setting is set */
 	if (IsInvisibilitySet(TO_TREES)) return;
@@ -639,6 +651,7 @@ static void TileLoop_Trees(TileIndex tile)
 		switch (_settings_game.game_creation.landscape) {
 			case LT_TROPIC: TileLoopTreesDesert(tile); break;
 			case LT_ARCTIC: TileLoopTreesAlps(tile);   break;
+			case LT_TEMPERATE: TileLoopTreesAlps(tile); break;
 		}
 	}
 
@@ -655,7 +668,14 @@ static void TileLoop_Trees(TileIndex tile)
 		}
 	}
 	if (GetTreeCounter(tile) < 15) {
-		AddTreeCounter(tile, 1);
+		if (_settings_game.construction.tree_growth_rate > 0) {
+			/* Nature randomness */
+			uint8 grow_slowing_values[3] = { 5, 20, 120 }; // slow, very slow, extremely slow
+			uint16 prob = 0x10000 / grow_slowing_values[_settings_game.construction.tree_growth_rate - 1];
+			if (GB(Random(), 0, 16) < prob) AddTreeCounter(tile, 1);
+		} else {
+			AddTreeCounter(tile, 1);
+		}
 		return;
 	}
 	SetTreeCounter(tile, 0);
@@ -811,4 +831,5 @@ extern const TileTypeProcs _tile_type_trees_procs = {
 	NULL,                     // vehicle_enter_tile_proc
 	GetFoundation_Trees,      // get_foundation_proc
 	TerraformTile_Trees,      // terraform_tile_proc
+	NULL                      // copypaste_tile_proc
 };

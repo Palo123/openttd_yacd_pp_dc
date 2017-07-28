@@ -63,6 +63,7 @@ Company::Company(uint16 name_1, bool is_ai)
 
 	for (uint j = 0; j < 4; j++) this->share_owners[j] = COMPANY_SPECTATOR;
 	InvalidateWindowData(WC_PERFORMANCE_DETAIL, 0, INVALID_COMPANY);
+	InvalidateWindowClassesData( WC_WATCH_COMPANY, 0 );
 }
 
 /** Destructor. */
@@ -83,6 +84,7 @@ void Company::PostDestructor(size_t index)
 	InvalidateWindowData(WC_PERFORMANCE_DETAIL, 0, (int)index);
 	InvalidateWindowData(WC_COMPANY_LEAGUE, 0, 0);
 	/* If the currently shown error message has this company in it, then close it. */
+	InvalidateWindowClassesData( WC_WATCH_COMPANY, 0 );
 	InvalidateWindowData(WC_ERRMSG, 0);
 }
 
@@ -207,22 +209,59 @@ static void SubtractMoneyFromAnyCompany(Company *c, CommandCost cost)
 	if (cost.GetCost() == 0) return;
 	assert(cost.GetExpensesType() != INVALID_EXPENSES);
 
-	c->money -= cost.GetCost();
-	c->yearly_expenses[0][cost.GetExpensesType()] += cost.GetCost();
-
 	if (HasBit(1 << EXPENSES_TRAIN_INC    |
 	           1 << EXPENSES_ROADVEH_INC  |
 	           1 << EXPENSES_AIRCRAFT_INC |
-	           1 << EXPENSES_SHIP_INC, cost.GetExpensesType())) {
+	           1 << EXPENSES_SHIP_INC     |
+			   1 << EXPENSES_SHARING_INC, cost.GetExpensesType())) {
 		c->cur_economy.income -= cost.GetCost();
 	} else if (HasBit(1 << EXPENSES_TRAIN_RUN    |
 	                  1 << EXPENSES_ROADVEH_RUN  |
 	                  1 << EXPENSES_AIRCRAFT_RUN |
-	                  1 << EXPENSES_SHIP_RUN     |
-	                  1 << EXPENSES_PROPERTY     |
-	                  1 << EXPENSES_LOAN_INT, cost.GetExpensesType())) {
-		c->cur_economy.expenses -= cost.GetCost();
-	}
+//	                  1 << EXPENSES_SHIP_RUN     |
+//	                  1 << EXPENSES_LOST_RUN     |
+//	                  1 << EXPENSES_PROPERTY     |
+//	                  1 << EXPENSES_LOAN_INT     |
+                          1 << EXPENSES_SHIP_RUN , cost.GetExpensesType())) {
+               if ((_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+                         _settings_game.economy.day_length_balance_type == DBT_RUN_COST)) {
+                       cost.MultiplyCost(_settings_game.economy.day_length_balance_factor);
+               }
+                c->cur_economy.expenses -= cost.GetCost();
+       } else if (HasBit(1 << EXPENSES_LOST_RUN, cost.GetExpensesType())) {
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+                       cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
+                c->cur_economy.expenses -= cost.GetCost();
+       } else if (HasBit(1 << EXPENSES_SHARING_COST, cost.GetExpensesType())) {
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+                       cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
+                c->cur_economy.expenses -= cost.GetCost();
+       } else if (HasBit(1 << EXPENSES_LOAN_INT, cost.GetExpensesType())) {
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+                  (_settings_game.economy.day_length_balance_type == DBT_RUN_COST &&
+                       _settings_game.economy.include_loan_int_to_run)) {
+                       cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
+                c->cur_economy.expenses -= cost.GetCost();
+       } else if (HasBit(1 << EXPENSES_PROPERTY, cost.GetExpensesType())) {
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+                  (_settings_game.economy.day_length_balance_type == DBT_RUN_COST &&
+                       _settings_game.economy.include_prop_main_to_run)) {
+                       cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
+               c->cur_economy.expenses -= cost.GetCost();
+       } else if (HasBit(1 << EXPENSES_CONSTRUCTION, cost.GetExpensesType())) {
+               /* Multiply construction costs according to day length balance type. */
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+                       cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
+        }
+
+       /* Subtract money. */
+       c->money -= cost.GetCost();
+       c->yearly_expenses[0][cost.GetExpensesType()] += cost.GetCost();
 
 	InvalidateCompanyWindows(c);
 }
@@ -566,6 +605,8 @@ Company *DoStartupNewCompany(bool is_ai, CompanyID company = INVALID_COMPANY)
 
 	AI::BroadcastNewEvent(new ScriptEventCompanyNew(c->index), c->index);
 	Game::NewEvent(new ScriptEventCompanyNew(c->index));
+
+	if (!is_ai) UpdateAllTownVirtCoords();
 
 	return c;
 }

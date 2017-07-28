@@ -15,6 +15,8 @@
 #include "../fileio_type.h"
 #include "../strings_type.h"
 
+#define SL_TTSEP_VER 200
+
 /** Save or load result codes. */
 enum SaveOrLoadResult {
 	SL_OK     = 0, ///< completed successfully
@@ -82,11 +84,20 @@ enum SLRefType {
 	REF_ENGINE_RENEWS = 6, ///< Load/save a reference to an engine renewal (autoreplace).
 	REF_CARGO_PACKET  = 7, ///< Load/save a reference to a cargo packet.
 	REF_ORDERLIST     = 8, ///< Load/save a reference to an orderlist.
-	REF_STORAGE       = 9, ///< Load/save a reference to a persistent storage.
+	REF_ROUTE_LINK    = 9, ///< Load/save a reference to a route link.
+	REF_STORAGE       = 10, ///< Load/save a reference to a persistent storage.
+	REF_TEMPLATE_VEHICLE = 11, ///< Load/save a reference to a template vehicle
 };
+
+/* Current savegame version. */
+static const uint TL_SV = 200;
 
 /** Highest possible savegame version. */
 #define SL_MAX_VERSION 255
+#define SL_IBC         200
+#define SL_TRIP        190
+#define SL_CONDORDERS  200
+#define MORE_HEIGHTLEVEL_SAVEGAME_VERSION 201
 
 /** Flags of a chunk. */
 enum ChunkType {

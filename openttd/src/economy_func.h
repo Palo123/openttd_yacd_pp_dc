@@ -21,17 +21,18 @@
 void ResetPriceBaseMultipliers();
 void SetPriceBaseMultiplier(Price price, int factor);
 
-extern const ScoreInfo _score_info[];
+extern ScoreInfo _score_info[];
 extern int _score_part[MAX_COMPANIES][SCORE_END];
 extern Economy _economy;
 /* Prices and also the fractional part. */
 extern Prices _price;
 
 int UpdateCompanyRatingAndValue(Company *c, bool update);
+bool InitializeGraphPerformance(int32 p1 = 0);
 void StartupIndustryDailyChanges(bool init_counter);
 
 Money GetTransportedGoodsIncome(uint num_pieces, uint dist, byte transit_days, CargoID cargo_type);
-uint MoveGoodsToStation(CargoID type, uint amount, SourceType source_type, SourceID source_id, const StationList *all_stations);
+uint MoveGoodsToStation(CargoID type, uint amount, SourceType source_type, SourceID source_id, const StationList *all_stations, TileIndex src_tile);
 
 void PrepareUnload(Vehicle *front_v);
 void LoadUnloadStation(Station *st);

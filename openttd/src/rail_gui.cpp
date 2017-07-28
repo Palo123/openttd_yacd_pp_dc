@@ -49,6 +49,8 @@ static bool _convert_signal_button;          ///< convert signal button in the s
 static SignalVariant _cur_signal_variant;    ///< set the signal variant (for signal GUI)
 static SignalType _cur_signal_type;          ///< set the signal type (for signal GUI)
 
+extern TileIndex _rail_track_endtile; // rail_cmd.cpp
+
 /* Map the setting: default_signal_type to the corresponding signal type */
 static const SignalType _default_signal_type[] = {SIGTYPE_NORMAL, SIGTYPE_PBS, SIGTYPE_PBS_ONEWAY};
 
@@ -88,9 +90,9 @@ void CcPlaySound1E(const CommandCost &result, TileIndex tile, uint32 p1, uint32 
 	if (result.Succeeded() && _settings_client.sound.confirm) SndPlayTileFx(SND_20_SPLAT_2, tile);
 }
 
-static void GenericPlaceRail(TileIndex tile, int cmd)
+static bool GenericPlaceRail(TileIndex tile, Track track)
 {
-	DoCommandP(tile, _cur_railtype, cmd,
+	return DoCommandP(tile, _cur_railtype, track,
 			_remove_button_clicked ?
 			CMD_REMOVE_SINGLE_RAIL | CMD_MSG(STR_ERROR_CAN_T_REMOVE_RAILROAD_TRACK) :
 			CMD_BUILD_SINGLE_RAIL | CMD_MSG(STR_ERROR_CAN_T_BUILD_RAILROAD_TRACK),
@@ -279,6 +281,17 @@ void CcBuildRailTunnel(const CommandCost &result, TileIndex tile, uint32 p1, uin
 }
 
 /**
+ * Place a rail tunnel.
+ * @param tile Position of the first tile of the tunnel.
+ */
+static void PlaceRail_Tunnel(TileIndex tile)
+{
+	if (DoCommandP(tile, _cur_railtype | (TRANSPORT_RAIL << 8), 0, CMD_BUILD_TUNNEL | CMD_MSG(STR_ERROR_CAN_T_BUILD_TUNNEL_HERE), CcBuildRailTunnel)) {
+		StoreRailPlacementEndpoints(tile, _build_tunnel_endtile, TileX(tile) == TileX(_build_tunnel_endtile) ? TRACK_Y : TRACK_X, false);
+	}
+}
+
+/**
  * Toggles state of the Remove button of Build rail toolbar
  * @param w window the button belongs to
  */
@@ -346,9 +359,9 @@ static void BuildRailClick_Remove(Window *w)
 	}
 }
 
-static void DoRailroadTrack(int mode)
+static bool DoRailroadTrack(TileIndex start_tile, TileIndex end_tile, Track track)
 {
-	DoCommandP(TileVirtXY(_thd.selstart.x, _thd.selstart.y), TileVirtXY(_thd.selend.x, _thd.selend.y), _cur_railtype | (mode << 4),
+	return DoCommandP(start_tile, end_tile, _cur_railtype | (track << 4),
 			_remove_button_clicked ?
 			CMD_REMOVE_RAILROAD_TRACK | CMD_MSG(STR_ERROR_CAN_T_REMOVE_RAILROAD_TRACK) :
 			CMD_BUILD_RAILROAD_TRACK  | CMD_MSG(STR_ERROR_CAN_T_BUILD_RAILROAD_TRACK),
@@ -357,14 +370,15 @@ static void DoRailroadTrack(int mode)
 
 static void HandleAutodirPlacement()
 {
-	int trackstat = _thd.drawstyle & HT_DIR_MASK; // 0..5
+	Track track = (Track)(_thd.drawstyle & HT_DIR_MASK); // 0..5
+	TileIndex start_tile = TileVirtXY(_thd.selstart.x, _thd.selstart.y);
+	TileIndex end_tile = TileVirtXY(_thd.selend.x, _thd.selend.y);
 
-	if (_thd.drawstyle & HT_RAIL) { // one tile case
-		GenericPlaceRail(TileVirtXY(_thd.selend.x, _thd.selend.y), trackstat);
-		return;
+	if (_thd.drawstyle & HT_RAIL ?
+			GenericPlaceRail(end_tile, track) : // one tile case
+			DoRailroadTrack(start_tile, end_tile, track)) { // longer track
+		StoreRailPlacementEndpoints(start_tile, _rail_track_endtile, track, true);
 	}
-
-	DoRailroadTrack(trackstat);
 }
 
 /**
@@ -408,6 +422,20 @@ static void HandleAutoSignalPlacement()
 			CMD_REMOVE_SIGNAL_TRACK | CMD_MSG(STR_ERROR_CAN_T_REMOVE_SIGNALS_FROM) :
 			CMD_BUILD_SIGNAL_TRACK  | CMD_MSG(STR_ERROR_CAN_T_BUILD_SIGNALS_HERE),
 			CcPlaySound1E);
+}
+
+typedef CursorID (RailtypeInfo::Cursor::* RailCursorType);
+
+static const RailCursorType RAIL_CURSOR_NS       = &RailtypeInfo::Cursor::rail_ns;
+static const RailCursorType RAIL_CURSOR_X        = &RailtypeInfo::Cursor::rail_swne;
+static const RailCursorType RAIL_CURSOR_EW       = &RailtypeInfo::Cursor::rail_ew;
+static const RailCursorType RAIL_CURSOR_Y        = &RailtypeInfo::Cursor::rail_nwse;
+static const RailCursorType RAIL_CURSOR_AUTORAIL = &RailtypeInfo::Cursor::autorail;
+
+void HandleRailPlacePushButton(Window *w, int widget, RailCursorType cursor, HighLightStyle mode)
+{
+	if (_ctrl_pressed) mode |= HT_POLY;
+	HandlePlacePushButton(w, widget, GetRailTypeInfo(_cur_railtype)->cursor.*cursor, mode);
 }
 
 
@@ -491,6 +519,24 @@ struct BuildRailToolbarWindow : Window {
 		}
 	}
 
+	virtual void DrawWidget(const Rect &r, int widget) const
+	{
+		switch (widget) {
+			case WID_RAT_BUILD_NS:
+			case WID_RAT_BUILD_X:
+			case WID_RAT_BUILD_EW:
+			case WID_RAT_BUILD_Y:
+			case WID_RAT_AUTORAIL:
+				if (this->IsWidgetLowered(widget) && _thd.place_mode & HT_POLY) {
+					DrawSprite(SPR_BLOT, PALETTE_TO_WHITE, r.left + WD_IMGBTN_LEFT, r.top + WD_IMGBTN_TOP);
+				}
+				break;
+
+			default:
+				break;
+		}
+	}
+
 	virtual void SetStringParameters(int widget) const
 	{
 		if (widget == WID_RAT_CAPTION) {
@@ -512,27 +558,27 @@ struct BuildRailToolbarWindow : Window {
 		_remove_button_clicked = false;
 		switch (widget) {
 			case WID_RAT_BUILD_NS:
-				HandlePlacePushButton(this, WID_RAT_BUILD_NS, GetRailTypeInfo(_cur_railtype)->cursor.rail_ns, HT_LINE | HT_DIR_VL);
+				HandleRailPlacePushButton(this, WID_RAT_BUILD_NS, RAIL_CURSOR_NS, HT_LINE | HT_DIR_VL);
 				this->last_user_action = widget;
 				break;
 
 			case WID_RAT_BUILD_X:
-				HandlePlacePushButton(this, WID_RAT_BUILD_X, GetRailTypeInfo(_cur_railtype)->cursor.rail_swne, HT_LINE | HT_DIR_X);
+				HandleRailPlacePushButton(this, WID_RAT_BUILD_X, RAIL_CURSOR_X, HT_LINE | HT_DIR_X);
 				this->last_user_action = widget;
 				break;
 
 			case WID_RAT_BUILD_EW:
-				HandlePlacePushButton(this, WID_RAT_BUILD_EW, GetRailTypeInfo(_cur_railtype)->cursor.rail_ew, HT_LINE | HT_DIR_HL);
+				HandleRailPlacePushButton(this, WID_RAT_BUILD_EW, RAIL_CURSOR_EW, HT_LINE | HT_DIR_HL);
 				this->last_user_action = widget;
 				break;
 
 			case WID_RAT_BUILD_Y:
-				HandlePlacePushButton(this, WID_RAT_BUILD_Y, GetRailTypeInfo(_cur_railtype)->cursor.rail_nwse, HT_LINE | HT_DIR_Y);
+				HandleRailPlacePushButton(this, WID_RAT_BUILD_Y, RAIL_CURSOR_Y, HT_LINE | HT_DIR_Y);
 				this->last_user_action = widget;
 				break;
 
 			case WID_RAT_AUTORAIL:
-				HandlePlacePushButton(this, WID_RAT_AUTORAIL, GetRailTypeInfo(_cur_railtype)->cursor.autorail, HT_RAIL);
+				HandleRailPlacePushButton(this, WID_RAT_AUTORAIL, RAIL_CURSOR_AUTORAIL, HT_RAIL);
 				this->last_user_action = widget;
 				break;
 
@@ -608,6 +654,14 @@ struct BuildRailToolbarWindow : Window {
 
 	virtual void OnPlaceObject(Point pt, TileIndex tile)
 	{
+		/* Test if we are in "polyline" mode. */
+		if (_thd.drawstyle & HT_POLY) {
+			/* There is no drag-dropping while in "polyline" mode, we build the track
+			 * immidiately after pushing mouse button down. */
+			HandleAutodirPlacement();
+			return;
+		}
+
 		switch (this->last_user_action) {
 			case WID_RAT_BUILD_NS:
 				VpStartPlaceSizing(tile, VPM_FIX_VERTICAL | VPM_RAILDIRS, DDSP_PLACE_RAIL);
@@ -656,7 +710,7 @@ struct BuildRailToolbarWindow : Window {
 				break;
 
 			case WID_RAT_BUILD_TUNNEL:
-				DoCommandP(tile, _cur_railtype | (TRANSPORT_RAIL << 8), 0, CMD_BUILD_TUNNEL | CMD_MSG(STR_ERROR_CAN_T_BUILD_TUNNEL_HERE), CcBuildRailTunnel);
+				PlaceRail_Tunnel(tile);
 				break;
 
 			case WID_RAT_CONVERT_RAIL:
@@ -759,13 +813,15 @@ struct BuildRailToolbarWindow : Window {
 };
 
 const uint16 _railtoolbar_autorail_keys[] = {'5', 'A' | WKC_GLOBAL_HOTKEY, 0};
+const uint16 _railtoolbar_polyline_autorail_keys[] = {'5' | WKC_CTRL, 'A' | WKC_GLOBAL_HOTKEY | WKC_CTRL, 0};
 
 Hotkey<BuildRailToolbarWindow> BuildRailToolbarWindow::railtoolbar_hotkeys[] = {
 	Hotkey<BuildRailToolbarWindow>('1', "build_ns", WID_RAT_BUILD_NS),
 	Hotkey<BuildRailToolbarWindow>('2', "build_x", WID_RAT_BUILD_X),
 	Hotkey<BuildRailToolbarWindow>('3', "build_ew", WID_RAT_BUILD_EW),
 	Hotkey<BuildRailToolbarWindow>('4', "build_y", WID_RAT_BUILD_Y),
-	Hotkey<BuildRailToolbarWindow>(_railtoolbar_autorail_keys, "autorail", WID_RAT_AUTORAIL),
+	Hotkey<BuildRailToolbarWindow>(_railtoolbar_autorail_keys, "autorail", WID_RAT_AUTORAIL),           // without CTRL
+	Hotkey<BuildRailToolbarWindow>(_railtoolbar_polyline_autorail_keys, "polyrail", WID_RAT_AUTORAIL),  // with CTRL
 	Hotkey<BuildRailToolbarWindow>('6', "demolish", WID_RAT_DEMOLISH),
 	Hotkey<BuildRailToolbarWindow>('7', "depot", WID_RAT_BUILD_DEPOT),
 	Hotkey<BuildRailToolbarWindow>('8', "waypoint", WID_RAT_BUILD_WAYPOINT),

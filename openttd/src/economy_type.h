@@ -28,6 +28,7 @@ struct Economy {
 	uint32 industry_daily_increment;      ///< The value which will increment industry_daily_change_counter. Computed value. NOSAVE
 	uint64 inflation_prices;              ///< Cumulated inflation of prices since game start; 16 bit fractional part
 	uint64 inflation_payment;             ///< Cumulated inflation of cargo paypent since game start; 16 bit fractional part
+	Money industry_helper;
 
 	/* Old stuff for savegame conversion only */
 	Money old_max_loan_unround;           ///< Old: Unrounded max loan
@@ -154,6 +155,7 @@ enum ExpensesType {
 	EXPENSES_ROADVEH_RUN,         ///< Running costs road vehicles.
 	EXPENSES_AIRCRAFT_RUN,        ///< Running costs aircrafts.
 	EXPENSES_SHIP_RUN,            ///< Running costs ships.
+	EXPENSES_LOST_RUN,            ///< Lost passengers costs.
 	EXPENSES_PROPERTY,            ///< Property costs.
 	EXPENSES_TRAIN_INC,           ///< Income from trains.
 	EXPENSES_ROADVEH_INC,         ///< Income from road vehicles.
@@ -161,6 +163,8 @@ enum ExpensesType {
 	EXPENSES_SHIP_INC,            ///< Income from ships.
 	EXPENSES_LOAN_INT,            ///< Interest payments over the loan.
 	EXPENSES_OTHER,               ///< Other expenses.
+	EXPENSES_SHARING_COST,        ///< Infrastructure sharing costs
+	EXPENSES_SHARING_INC,         ///< Infrastructure sharing income
 	EXPENSES_END,                 ///< Number of expense types.
 	INVALID_EXPENSES      = 0xFF, ///< Invalid expense type.
 };
@@ -182,6 +186,22 @@ struct PriceBaseSpec {
 	PriceCategory category; ///< Price is affected by certain difficulty settings.
 	uint grf_feature;       ///< GRF Feature that decides whether price multipliers apply locally or globally, #GSF_END if none.
 	Price fallback_price;   ///< Fallback price multiplier for new prices but old grfs.
+};
+
+/* Default needed values for score */
+#define SCORE_MIN_PROFIT_NEEDED    10000
+#define SCORE_MIN_INCOME_NEEDED    50000
+#define SCORE_MAX_INCOME_NEEDED    100000
+#define SCORE_DELIVERED_NEEDED     40000
+#define SCORE_MONEY_NEEDED         10000000
+
+enum DayLengthBalanceType {
+	DBT_NONE = 0,   ///< no balancing for day length
+	DBT_RUN_COST,   ///< balancing running cost
+	DBT_ALL_COSTS,  ///< balancing all costs
+	DBT_PAYMENTS,   ///< balancing payments
+
+	DBT_NUM,
 };
 
 /** The "steps" in loan size, in British Pounds! */

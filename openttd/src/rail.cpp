@@ -149,10 +149,23 @@ extern const TrackdirBits _uphill_trackdirs[] = {
 	TRACKDIR_BIT_X_NE | TRACKDIR_BIT_Y_SE, ///< 30 SLOPE_STEEP_E -> inclined for diagonal track
 };
 
+/** Lookup table to transform a Track by a given DirTransformation. */
+extern const byte _track_transformation_map[DTR_END][TRACK_END] = {
+	{ TRACK_X, TRACK_Y, TRACK_UPPER, TRACK_LOWER, TRACK_LEFT,  TRACK_RIGHT }, // DTR_IDENTITY
+	{ TRACK_Y, TRACK_X, TRACK_RIGHT, TRACK_LEFT,  TRACK_UPPER, TRACK_LOWER }, // DTR_ROTATE_90_R
+	{ TRACK_X, TRACK_Y, TRACK_LOWER, TRACK_UPPER, TRACK_RIGHT, TRACK_LEFT  }, // DTR_ROTATE_180
+	{ TRACK_Y, TRACK_X, TRACK_LEFT,  TRACK_RIGHT, TRACK_LOWER, TRACK_UPPER }, // DTR_ROTATE_90_L
+	{ TRACK_X, TRACK_Y, TRACK_RIGHT, TRACK_LEFT,  TRACK_LOWER, TRACK_UPPER }, // DTR_REFLECT_NE_SW
+	{ TRACK_Y, TRACK_X, TRACK_LOWER, TRACK_UPPER, TRACK_LEFT,  TRACK_RIGHT }, // DTR_REFLECT_W_E
+	{ TRACK_X, TRACK_Y, TRACK_LEFT,  TRACK_RIGHT, TRACK_UPPER, TRACK_LOWER }, // DTR_REFLECT_NW_SE
+	{ TRACK_Y, TRACK_X, TRACK_UPPER, TRACK_LOWER, TRACK_RIGHT, TRACK_LEFT  }  // DTR_REFLECT_N_S
+};
+
 /**
  * Return the rail type of tile, or INVALID_RAILTYPE if this is no rail tile.
  */
-RailType GetTileRailType(TileIndex tile)
+template <bool Tgeneric>
+RailType GetTileRailType(typename TileIndexT<Tgeneric>::T tile)
 {
 	switch (GetTileType(tile)) {
 		case MP_RAILWAY:
@@ -176,6 +189,9 @@ RailType GetTileRailType(TileIndex tile)
 	}
 	return INVALID_RAILTYPE;
 }
+/* instantiate */
+template RailType GetTileRailType<false>(TileIndex tile);
+template RailType GetTileRailType<true>(GenericTileIndex tile);
 
 /**
  * Finds out if a company has a certain railtype available

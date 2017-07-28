@@ -18,6 +18,7 @@
 #include "viewport_func.h"
 #include "news_func.h"
 #include "command_func.h"
+#include "command_type.h"
 #include "company_func.h"
 #include "train.h"
 #include "aircraft.h"
@@ -41,6 +42,7 @@
 #include "roadstop_base.h"
 #include "core/random_func.hpp"
 #include "core/backup_type.hpp"
+#include "infrastructure_func.h"
 #include "order_backup.h"
 #include "sound_func.h"
 #include "effectvehicle_func.h"
@@ -49,9 +51,13 @@
 #include "bridge_map.h"
 #include "tunnel_map.h"
 #include "depot_map.h"
+#include "cargodest_func.h"
 #include "gamelog.h"
 
 #include "table/strings.h"
+
+// MYGUI
+#include "aaa_template_vehicle_func.h"
 
 #define GEN_HASH(x, y) ((GB((y), 6 + ZOOM_LVL_SHIFT, 6) << 6) + GB((x), 7 + ZOOM_LVL_SHIFT, 6))
 
@@ -95,8 +101,36 @@ bool Vehicle::NeedsAutorenewing(const Company *c, bool use_renew_setting) const
 void VehicleServiceInDepot(Vehicle *v)
 {
 	assert(v != NULL);
+	v->date_of_last_service = _date;
+	if(v->breakdowns_since_last_service != 0) {
+		if (_settings_game.vehicle.repair_cost) {
+			ExpensesType type = INVALID_EXPENSES;
+			_current_company = v->owner;
+			switch (v->type) {
+				case VEH_AIRCRAFT:
+					type = EXPENSES_AIRCRAFT_RUN;
+					break;
+				case VEH_TRAIN:
+					type = EXPENSES_TRAIN_RUN;
+					break;
+				case VEH_SHIP:
+					type = EXPENSES_SHIP_RUN;
+					break;
+				case VEH_ROAD:
+					type = EXPENSES_ROADVEH_RUN;
+					break;
+				default:
+					NOT_REACHED();
+			}
+			assert(type != INVALID_EXPENSES);
+			CommandCost cost(type, (v->breakdowns_since_last_service * v->value >> 10) + 1);
+			v->First()->profit_this_year -= cost.GetCost() << 8;
+			SubtractMoneyFromCompany(cost);
+			ShowCostOrIncomeAnimation(v->x_pos, v->y_pos, v->z_pos, cost.GetCost());
+		}
+	}
 	SetWindowDirty(WC_VEHICLE_DETAILS, v->index); // ensure that last service date and reliability are updated
-
+	
 	do {
 		v->date_of_last_service = _date;
 		v->breakdowns_since_last_service = 0;
@@ -119,11 +153,21 @@ bool Vehicle::NeedsServicing() const
 	 * vehicles to go for service is lame. */
 	if (this->vehstatus & (VS_STOPPED | VS_CRASHED)) return false;
 
+       Date interval = this->service_interval;
+
+       if (!_settings_game.economy.slow_down_veh_rel_drop_down) {
+               interval /= _settings_game.economy.day_length_factor;
+               if (interval == 0) interval = 1;
+       }
+
+
 	/* Are we ready for the next service cycle? */
 	const Company *c = Company::Get(this->owner);
 	if (this->ServiceIntervalIsPercent() ?
-			(this->reliability >= this->GetEngine()->reliability * (100 - this->GetServiceInterval()) / 100) :
-			(this->date_of_last_service + this->GetServiceInterval() >= _date)) {
+//			(this->reliability >= this->GetEngine()->reliability * (100 - this->GetServiceInterval()) / 100) :
+//			(this->date_of_last_service + this->GetServiceInterval() >= _date)) {
+                       (this->reliability >= Engine::Get(this->engine_type)->reliability * (100 - interval) / 100) :
+                       (this->date_of_last_service + interval >= _date)) {
 		return false;
 	}
 
@@ -216,6 +260,17 @@ uint Vehicle::Crash(bool flooded)
 	return RandomRange(pass + 1); // Randomise deceased passengers.
 }
 
+/** Marks the separation of this vehicle's order list invalid. */
+void Vehicle::MarkSeparationInvalid()
+{
+	if (this->orders.list != NULL) this->orders.list->MarkSeparationInvalid();
+}
+
+/** Sets new separation settings for this vehicle's shared orders. */
+void Vehicle::SetSepSettings(TTSepMode Mode, uint Parameter)
+{
+	if (this->orders.list != NULL) this->orders.list->SetSepSettings(Mode, Parameter);
+}
 
 /**
  * Displays a "NewGrf Bug" error message for a engine, and pauses the game if not networking.
@@ -278,7 +333,10 @@ Vehicle::Vehicle(VehicleType type)
 	this->fill_percent_te_id = INVALID_TE_ID;
 	this->first              = this;
 	this->colourmap          = PAL_NONE;
+	this->last_station_loaded = INVALID_STATION;
 	this->cargo_age_counter  = 1;
+	this->current_order.index = INVALID_ORDER;
+	this->last_order_id      = INVALID_ORDER;
 }
 
 /**
@@ -319,6 +377,14 @@ static Vehicle *VehicleFromTileHash(int xl, int yl, int xu, int yu, void *data, 
 	}
 
 	return NULL;
+}
+
+bool Vehicle::IsDrawn() const
+{
+	return !(this->vehstatus & VS_HIDDEN) ||
+			(IsTransparencySet(TO_TUNNELS) &&
+				((this->type == VEH_TRAIN && Train::From(this)->track == TRACK_BIT_WORMHOLE) ||
+				(this->type == VEH_ROAD && RoadVehicle::From(this)->state == RVSB_WORMHOLE)));
 }
 
 
@@ -616,6 +682,13 @@ void ResetVehicleColourMap()
 typedef SmallMap<Vehicle *, bool, 4> AutoreplaceMap;
 static AutoreplaceMap _vehicles_to_autoreplace;
 
+/**
+ * List of vehicles that are issued for template replacement this tick.
+ * Mapping is {vehicle : leave depot after replacement}
+ */
+typedef SmallMap<Train *, bool, 4> TemplateReplacementMap;
+static TemplateReplacementMap _vehicles_to_templatereplace;
+
 void InitializeVehicles()
 {
 	_vehicles_to_autoreplace.Reset();
@@ -798,7 +871,7 @@ Vehicle::~Vehicle()
 
 	/* sometimes, eg. for disaster vehicles, when company bankrupts, when removing crashed/flooded vehicles,
 	 * it may happen that vehicle chain is deleted when visible */
-	if (!(this->vehstatus & VS_HIDDEN)) MarkSingleVehicleDirty(this);
+	if (this->IsDrawn()) MarkSingleVehicleDirty(this);
 
 	Vehicle *v = this->Next();
 	this->SetNext(NULL);
@@ -817,14 +890,25 @@ Vehicle::~Vehicle()
  */
 void VehicleEnteredDepotThisTick(Vehicle *v)
 {
-	/* Vehicle should stop in the depot if it was in 'stopping' state */
-	_vehicles_to_autoreplace[v] = !(v->vehstatus & VS_STOPPED);
+	/* Template Replacement Setup stuff */ // MYGUI
+	bool stayInDepot = v->current_order.GetDepotActionType();
+	TemplateReplacement *tr = GetTemplateReplacementByGroupID(v->group_id);
+	if ( tr ) {
+		if ( stayInDepot )	_vehicles_to_templatereplace[(Train*)v] = true;
+		else				_vehicles_to_templatereplace[(Train*)v] = false;
+	}
+	/* Moved the assignment for auto replacement here to prevent auto replacement
+	 * from happening if template replacement is also scheduled */
+	else
+		/* Vehicle should stop in the depot if it was in 'stopping' state */
+		_vehicles_to_autoreplace[v] = !(v->vehstatus & VS_STOPPED);
 
 	/* We ALWAYS set the stopped state. Even when the vehicle does not plan on
 	 * stopping in the depot, so we stop it to ensure that it will not reserve
 	 * the path out of the depot before we might autoreplace it to a different
 	 * engine. The new engine would not own the reserved path we store that we
 	 * stopped the vehicle, so autoreplace can start it again */
+
 	v->vehstatus |= VS_STOPPED;
 }
 
@@ -865,6 +949,7 @@ static void RunVehicleDayProc()
 void CallVehicleTicks()
 {
 	_vehicles_to_autoreplace.Clear();
+	_vehicles_to_templatereplace.Clear();
 
 	RunVehicleDayProc();
 
@@ -907,6 +992,8 @@ void CallVehicleTicks()
 				/* Do not play any sound when stopped */
 				if ((front->vehstatus & VS_STOPPED) && (front->type != VEH_TRAIN || front->cur_speed == 0)) continue;
 
+                               v->travel_time++;
+
 				/* Check vehicle type specifics */
 				switch (v->type) {
 					case VEH_TRAIN:
@@ -941,6 +1028,7 @@ void CallVehicleTicks()
 		}
 	}
 
+	/* do Auto Replacement */
 	Backup<CompanyByte> cur_company(_current_company, FILE_LINE);
 	for (AutoreplaceMap::iterator it = _vehicles_to_autoreplace.Begin(); it != _vehicles_to_autoreplace.End(); it++) {
 		v = it->first;
@@ -985,8 +1073,28 @@ void CallVehicleTicks()
 		SetDParam(1, error_message);
 		AddVehicleAdviceNewsItem(message, v->index);
 	}
-
 	cur_company.Restore();
+
+	/* do Template Replacement */
+	Backup<CompanyByte> tmpl_cur_company(_current_company, FILE_LINE);
+	for (TemplateReplacementMap::iterator it = _vehicles_to_templatereplace.Begin(); it != _vehicles_to_templatereplace.End(); it++) {
+
+		Train *t = it->first;
+
+		tmpl_cur_company.Change(t->owner);
+
+		bool stayInDepot = it->second;
+
+		it->first->vehstatus |= VS_STOPPED;
+		REPLACEMENT_IN_PROGRESS = true;
+
+		CmdTemplateReplaceVehicle(t, stayInDepot, DC_EXEC);
+		/* Redraw main gui for changed statistics */
+		SetWindowClassesDirty(WC_TEMPLATEGUI_MAIN);
+
+		REPLACEMENT_IN_PROGRESS = false;
+	}
+	tmpl_cur_company.Restore();
 }
 
 /**
@@ -1001,7 +1109,7 @@ static void DoDrawVehicle(const Vehicle *v)
 	if (v->vehstatus & VS_DEFPAL) pal = (v->vehstatus & VS_CRASHED) ? PALETTE_CRASH : GetVehiclePalette(v);
 
 	/* Check whether the vehicle shall be transparent due to the game state */
-	bool shadowed = (v->vehstatus & VS_SHADOW) != 0;
+	bool shadowed = (v->vehstatus & (VS_SHADOW | VS_HIDDEN));
 
 	if (v->type == VEH_EFFECT) {
 		/* Check whether the vehicle shall be transparent/invisible due to GUI settings.
@@ -1052,7 +1160,7 @@ void ViewportAddVehicles(DrawPixelInfo *dpi)
 			const Vehicle *v = _vehicle_viewport_hash[x + y]; // already masked & 0xFFF
 
 			while (v != NULL) {
-				if (!(v->vehstatus & VS_HIDDEN) &&
+				if (v->IsDrawn() &&
 						l <= v->coord.right &&
 						t <= v->coord.bottom &&
 						r >= v->coord.left &&
@@ -1087,7 +1195,7 @@ Vehicle *CheckClickOnVehicle(const ViewPort *vp, int x, int y)
 	y = ScaleByZoom(y, vp->zoom) + vp->virtual_top;
 
 	FOR_ALL_VEHICLES(v) {
-		if ((v->vehstatus & (VS_HIDDEN | VS_UNCLICKABLE)) == 0 &&
+		if (v->IsDrawn() && !(v->vehstatus & VS_UNCLICKABLE) &&
 				x >= v->coord.left && x <= v->coord.right &&
 				y >= v->coord.top && y <= v->coord.bottom) {
 
@@ -1132,8 +1240,12 @@ void CheckVehicleBreakdown(Vehicle *v)
 	int rel, rel_old;
 
 	/* decrease reliability */
-	v->reliability = rel = max((rel_old = v->reliability) - v->reliability_spd_dec, 0);
-	if ((rel_old >> 8) != (rel >> 8)) SetWindowDirty(WC_VEHICLE_DETAILS, v->index);
+	if (!_settings_game.economy.slow_down_veh_rel_drop_down ||
+			(_date_fract < DAY_TICKS &&
+			_settings_game.economy.slow_down_veh_rel_drop_down)) {
+		v->reliability = rel = max((rel_old = v->reliability) - v->reliability_spd_dec, 0);
+		if ((rel_old >> 8) != (rel >> 8)) SetWindowDirty(WC_VEHICLE_DETAILS, v->index);
+	}
 
 	if (v->breakdown_ctr != 0 || (v->vehstatus & VS_STOPPED) ||
 			_settings_game.difficulty.vehicle_breakdowns < 1 ||
@@ -1236,6 +1348,9 @@ bool Vehicle::HandleBreakdown()
  */
 void AgeVehicle(Vehicle *v)
 {
+       if (_date_fract >= DAY_TICKS &&
+               _settings_game.economy.slow_down_veh_rel_drop_down) return;
+
 	if (v->age < MAX_DAY) {
 		v->age++;
 		if (v->IsPrimaryVehicle() && v->age == VEHICLE_PROFIT_MIN_AGE + 1) GroupStatistics::VehicleReachedProfitAge(v);
@@ -1440,6 +1555,7 @@ void VehicleEnterDepot(Vehicle *v)
 				AddVehicleAdviceNewsItem(STR_NEWS_TRAIN_IS_WAITING + v->type, v->index);
 			}
 			AI::NewEvent(v->owner, new ScriptEventVehicleWaitingInDepot(v->index));
+			v->MarkSeparationInvalid();
 		}
 	}
 }
@@ -1911,11 +2027,14 @@ void Vehicle::DeleteUnreachedImplicitOrders()
 
 /**
  * Prepare everything to begin the loading when arriving at a station.
+ * @param station The station ID of the station.
  * @pre IsTileType(this->tile, MP_STATION) || this->type == VEH_SHIP.
  */
-void Vehicle::BeginLoading()
+void Vehicle::BeginLoading(StationID station)
 {
 	assert(IsTileType(this->tile, MP_STATION) || this->type == VEH_SHIP);
+
+	this->last_station_visited = station;
 
 	if (this->current_order.IsType(OT_GOTO_STATION) &&
 			this->current_order.GetDestination() == this->last_station_visited) {
@@ -1997,6 +2116,7 @@ void Vehicle::BeginLoading()
 					implicit_order->MakeImplicit(this->last_station_visited);
 					InsertOrder(this, implicit_order, this->cur_implicit_order_index);
 					if (this->cur_implicit_order_index > 0) --this->cur_implicit_order_index;
+					this->current_order.index = implicit_order->index;
 
 					/* InsertOrder disabled creation of implicit orders for all vehicles with the same implicit order.
 					 * Reenable it for this vehicle */
@@ -2008,7 +2128,35 @@ void Vehicle::BeginLoading()
 		this->current_order.MakeLoading(false);
 	}
 
-	Station::Get(this->last_station_visited)->loading_vehicles.push_back(this);
+       /* If all requirements for separation are met, we can initialize it. */
+       if (_settings_game.order.automatic_timetable_separation
+                       && this->IsOrderListShared()
+                       && this->orders.list->IsCompleteTimetable()
+                       && (this->cur_real_order_index == 0)) {
+
+               if (!this->orders.list->IsSeparationValid()) this->orders.list->InitializeSeparation();
+               this->lateness_counter = this->orders.list->SeparateVehicle();
+       }
+
+	UpdateVehicleRouteLinks(this, station);
+
+	/* Save the id of the order which made us arrive here. MakeLoading
+	 * does not overwrite the index so it is still valid here. */
+	this->last_order_id = this->current_order.index;
+	this->last_station_loaded = station;
+
+	Station *last_visited = Station::Get(this->last_station_visited);
+	last_visited->loading_vehicles.push_back(this);
+
+	/* Update the next hop for waiting cargo. */
+	CargoID cid;
+	FOR_EACH_SET_CARGO_ID(cid, this->vcache.cached_cargo_mask) {
+		/* Only update if the last update was at least route_recalc_delay ticks earlier. */
+		if (CargoHasDestinations(cid) && last_visited->goods[cid].cargo_counter == 0) {
+			last_visited->goods[cid].cargo.UpdateCargoNextHop(last_visited, cid);
+			last_visited->goods[cid].cargo_counter = _settings_game.economy.cargodest.route_recalc_delay;
+		}
+	}
 
 	PrepareUnload(this);
 
@@ -2034,6 +2182,9 @@ void Vehicle::LeaveStation()
 
 	/* Only update the timetable if the vehicle was supposed to stop here. */
 	if (this->current_order.GetNonStopType() != ONSF_STOP_EVERYWHERE) UpdateVehicleTimetable(this, false);
+
+	/* Reset travel time counter. */
+	this->travel_time = 0;
 
 	this->current_order.MakeLeaveStation();
 	Station *st = Station::Get(this->last_station_visited);
@@ -2063,6 +2214,9 @@ void Vehicle::HandleLoading(bool mode)
 	switch (this->current_order.GetType()) {
 		case OT_LOADING: {
 			uint wait_time = max(this->current_order.wait_time - this->lateness_counter, 0);
+
+			/* Pay the loading fee for using someone else's station, if appropriate */
+			if (!mode && this->type != VEH_TRAIN) PayStationSharingFee(this, Station::Get(this->last_station_visited));
 
 			/* Not the first call for this tick, or still loading */
 			if (mode || !HasBit(this->vehicle_flags, VF_LOADING_FINISHED) || this->current_order_time < wait_time) return;
@@ -2257,8 +2411,6 @@ void Vehicle::ShowVisualEffect() const
 			this->cur_speed < 2) {
 		return;
 	}
-
-	uint max_speed = this->vcache.cached_max_speed;
 	if (this->type == VEH_TRAIN) {
 		const Train *t = Train::From(this);
 		/* For trains, do not show any smoke when:
@@ -2270,11 +2422,7 @@ void Vehicle::ShowVisualEffect() const
 				t->cur_speed >= t->Train::GetCurrentMaxSpeed())) {
 			return;
 		}
-
-		max_speed = min(max_speed, t->gcache.cached_max_track_speed);
-		max_speed = min(max_speed, this->current_order.max_speed);
 	}
-	if (this->type == VEH_ROAD || this->type == VEH_SHIP) max_speed = min(max_speed, this->current_order.max_speed * 2);
 
 	const Vehicle *v = this;
 
@@ -2320,7 +2468,7 @@ void Vehicle::ShowVisualEffect() const
 				 * third of its maximum speed spectrum. Steam emission finally normalises at very close to vehicle's maximum speed.
 				 * REGULATION:
 				 * - instead of 1, 4 / 2^smoke_amount (max. 2) is used to provide sufficient regulation to steam puffs' amount. */
-				if (GB(v->tick_counter, 0, ((4 >> _settings_game.vehicle.smoke_amount) + ((this->cur_speed * 3) / max_speed))) == 0) {
+				if (GB(v->tick_counter, 0, ((4 >> _settings_game.vehicle.smoke_amount) + ((this->cur_speed * 3) / this->vcache.cached_max_speed))) == 0) {
 					CreateEffectVehicleRel(v, x, y, 10, EV_STEAM_SMOKE);
 					sound = true;
 				}
@@ -2342,8 +2490,8 @@ void Vehicle::ShowVisualEffect() const
 				if (v->type == VEH_TRAIN) {
 					power_weight_effect = (32 >> (Train::From(this)->gcache.cached_power >> 10)) - (32 >> (Train::From(this)->gcache.cached_weight >> 9));
 				}
-				if (this->cur_speed < (max_speed >> (2 >> _settings_game.vehicle.smoke_amount)) &&
-						Chance16((64 - ((this->cur_speed << 5) / max_speed) + power_weight_effect), (512 >> _settings_game.vehicle.smoke_amount))) {
+				if (this->cur_speed < (this->vcache.cached_max_speed >> (2 >> _settings_game.vehicle.smoke_amount)) &&
+						Chance16((64 - ((this->cur_speed << 5) / this->vcache.cached_max_speed) + power_weight_effect), (512 >> _settings_game.vehicle.smoke_amount))) {
 					CreateEffectVehicleRel(v, x, y, 10, EV_DIESEL_SMOKE);
 					sound = true;
 				}
@@ -2358,7 +2506,7 @@ void Vehicle::ShowVisualEffect() const
 				 * REGULATION:
 				 * - in Chance16 the last value is 360 / 2^smoke_amount (max. sparks when 90 = smoke_amount of 2). */
 				if (GB(v->tick_counter, 0, 2) == 0 &&
-						Chance16((6 - ((this->cur_speed << 2) / max_speed)), (360 >> _settings_game.vehicle.smoke_amount))) {
+						Chance16((6 - ((this->cur_speed << 2) / this->vcache.cached_max_speed)), (360 >> _settings_game.vehicle.smoke_amount))) {
 					CreateEffectVehicleRel(v, x, y, 10, EV_ELECTRIC_SPARK);
 					sound = true;
 				}
@@ -2423,6 +2571,7 @@ void Vehicle::AddToShared(Vehicle *shared_chain)
 	if (this->next_shared != NULL) this->next_shared->previous_shared = this;
 
 	shared_chain->orders.list->AddVehicle(this);
+	shared_chain->orders.list->MarkSeparationInvalid();
 }
 
 /**
@@ -2435,6 +2584,7 @@ void Vehicle::RemoveFromShared()
 	bool were_first = (this->FirstShared() == this);
 	VehicleListIdentifier vli(VL_SHARED_ORDERS, this->type, this->owner, this->FirstShared()->index);
 
+	this->orders.list->MarkSeparationInvalid();
 	this->orders.list->RemoveVehicle(this);
 
 	if (!were_first) {

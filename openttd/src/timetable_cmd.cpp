@@ -16,6 +16,7 @@
 #include "window_func.h"
 #include "vehicle_base.h"
 #include "cmd_helper.h"
+#include "settings_type.h"
 
 #include "table/strings.h"
 
@@ -69,6 +70,7 @@ static void ChangeTimetable(Vehicle *v, VehicleOrderID order_number, uint16 val,
 				default:
 					NOT_REACHED();
 			}
+			v->MarkSeparationInvalid();
 		}
 		SetWindowDirty(WC_VEHICLE_TIMETABLE, v->index);
 	}
@@ -195,11 +197,16 @@ CommandCost CmdSetTimetableStart(TileIndex tile, DoCommandFlag flags, uint32 p1,
 	CommandCost ret = CheckOwnership(v->owner);
 	if (ret.Failed()) return ret;
 
+	DateTicks start_date = (Date)p2 / DAY_TICKS_DAY_LENGTH;
+
+#if WALLCLOCK_NETWORK_COMPATIBLE
 	/* Don't let a timetable start more than 15 years into the future or 1 year in the past. */
-	Date start_date = (Date)p2;
 	if (start_date < 0 || start_date > MAX_DAY) return CMD_ERROR;
 	if (start_date - _date > 15 * DAYS_IN_LEAP_YEAR) return CMD_ERROR;
 	if (_date - start_date > DAYS_IN_LEAP_YEAR) return CMD_ERROR;
+#else
+	start_date = ((DateTicks)_date * DAY_TICKS_DAY_LENGTH) + _date_fract + (DateTicks)(int32)p2;
+#endif
 
 	if (flags & DC_EXEC) {
 		v->lateness_counter = 0;
@@ -268,6 +275,33 @@ CommandCost CmdAutofillTimetable(TileIndex tile, DoCommandFlag flags, uint32 p1,
 }
 
 /**
+ * Set new separation parameters
+ * @param tile  Not used.
+ * @param flags Operation to perform.
+ * @param p1    Order lit id.
+ * @param p2
+ *   - p2 = (bit 0-1)  - Separation mode (@see TTSepMode)
+ *   - p2 = (bit 2-31) - Separation parameter (Unused if #TTS_MODE_OFF | #TTS_MODE_AUTO,
+ *                       Number of vehicles if #TTS_MODE_MAN_N, separation delay in ticks if #TTS_MODE_MAN_T).
+ * @param text  Not used.
+ * @return      The error or cost of the operation.
+ */
+CommandCost CmdReinitSeparation(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 p2, const char *text)
+{
+	Vehicle *v = Vehicle::GetIfValid(GB(p1, 0, 20));
+	if (v == NULL || !v->IsPrimaryVehicle()) return CMD_ERROR;
+
+	CommandCost ret = CheckOwnership(v->owner);
+	if (ret.Failed()) return ret;
+
+	if (flags & DC_EXEC) {
+		v->SetSepSettings((TTSepMode)GB(p2, 0, 3), GB(p2, 3, 28));
+	}
+
+	return CommandCost();
+}
+
+/**
  * Update the timetable for the vehicle.
  * @param v The vehicle to update the timetable for.
  * @param travelling Whether we just travelled or waited at a station.
@@ -290,6 +324,7 @@ void UpdateVehicleTimetable(Vehicle *v, bool travelling)
 
 	/* This vehicle is arriving at the first destination in the timetable. */
 	if (v->cur_real_order_index == first_manual_order && travelling) {
+		v->trip_history.NewRound();
 		/* If the start date hasn't been set, or it was set automatically when
 		 * the vehicle last arrived at the first destination, update it to the
 		 * current time. Otherwise set the late counter appropriately to when
@@ -297,7 +332,11 @@ void UpdateVehicleTimetable(Vehicle *v, bool travelling)
 		just_started = !HasBit(v->vehicle_flags, VF_TIMETABLE_STARTED);
 
 		if (v->timetable_start != 0) {
-			v->lateness_counter = (_date - v->timetable_start) * DAY_TICKS + _date_fract;
+#if WALLCLOCK_NETWORK_COMPATIBLE
+			v->lateness_counter = (_date - v->timetable_start) * DAY_TICKS_DAY_LENGTH + _date_fract;
+#else
+			v->lateness_counter = (_date * DAY_TICKS_DAY_LENGTH) + _date_fract - v->timetable_start;
+#endif
 			v->timetable_start = 0;
 		}
 
@@ -327,7 +366,7 @@ void UpdateVehicleTimetable(Vehicle *v, bool travelling)
 			 * the timetable entry like is done for road vehicles/ships.
 			 * Thus always make sure at least one tick is used between the
 			 * processing of different orders when filling the timetable. */
-			time_taken = CeilDiv(max(time_taken, 1U), DAY_TICKS) * DAY_TICKS;
+			time_taken = CeilDiv(max(time_taken, 1U), DATE_UNIT_SIZE) * DATE_UNIT_SIZE;
 
 			ChangeTimetable(v, v->cur_real_order_index, time_taken, travelling ? MTF_TRAVEL_TIME : MTF_WAIT_TIME);
 		}

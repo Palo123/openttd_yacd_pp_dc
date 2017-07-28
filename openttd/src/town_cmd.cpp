@@ -137,17 +137,36 @@ void Town::InitializeLayout(TownLayout layout)
 }
 
 /**
- * Return a random valid town.
- * @return random town, NULL if there are no towns
+ * Return a random town that statisfies some criteria specified
+ * with a callback function.
+ *
+ * @param enum_proc Callback function. Return true for a matching town and false to continue iterating.
+ * @param skip Skip over this town id when searching.
+ * @param data Optional data passed to the callback function.
+ * @return A town satisfying the search criteria or NULL if no such town exists.
  */
-/* static */ Town *Town::GetRandom()
+/* static */ Town *Town::GetRandom(EnumTownProc enum_proc, TownID skip, void *data)
 {
-	if (Town::GetNumItems() == 0) return NULL;
-	int num = RandomRange((uint16)Town::GetNumItems());
-	size_t index = MAX_UVALUE(size_t);
+	assert(skip == INVALID_TOWN || Town::IsValidID(skip));
 
-	while (num >= 0) {
-		num--;
+	uint16 max_num = 0;
+	if (enum_proc != NULL) {
+		/* A callback was given, count all matching towns. */
+		Town *t;
+		FOR_ALL_TOWNS(t) {
+			if (t->index != skip && enum_proc(t, data)) max_num++;
+		}
+	} else {
+		max_num = (uint16)Town::GetNumItems();
+		/* Subtract one if a town to skip was given. max_num is at least
+		 * one here as otherwise skip could not be valid. */
+		if (skip != INVALID_TOWN) max_num--;
+	}
+	if (max_num == 0) return NULL;
+
+	uint num = RandomRange(max_num) + 1;
+	size_t index = MAX_UVALUE(size_t);
+	do {
 		index++;
 
 		/* Make sure we have a valid town */
@@ -155,9 +174,31 @@ void Town::InitializeLayout(TownLayout layout)
 			index++;
 			assert(index < Town::GetPoolSize());
 		}
-	}
+
+		if (index != skip && (enum_proc == NULL || enum_proc(Town::Get(index), data))) num--;
+	} while (num > 0);
 
 	return Town::Get(index);
+}
+
+/**
+ * Updates the town label of the town after changes in rating. The colour scheme is:
+ * Red: Appalling and Very poor ratings.
+ * Orange: Poor and mediocre ratings.
+ * Yellow: Good rating.
+ * White: Very good rating (standard).
+ * Green: Excellent and outstanding ratings.
+ */
+void Town::UpdateLabel()
+{
+	if (!(_game_mode == GM_EDITOR) && (_local_company < MAX_COMPANIES)) {
+		int r = this->ratings[_local_company];
+		(this->town_label = 0, r <= RATING_VERYPOOR)  || // Appalling and Very Poor
+		(this->town_label++,   r <= RATING_MEDIOCRE)  || // Poor and Mediocre
+		(this->town_label++,   r <= RATING_GOOD)      || // Good
+		(this->town_label++,   r <= RATING_VERYGOOD)  || // Very Good
+		(this->town_label++,   true);                    // Excellent and Outstanding
+	}
 }
 
 /**
@@ -227,6 +268,8 @@ static void DrawTile_Town(TileInfo *ti)
 	const DrawBuildingsTileStruct *dcts = &_town_draw_tile_data[house_id << 4 | TileHash2Bit(ti->x, ti->y) << 2 | GetHouseBuildingStage(ti->tile)];
 
 	if (ti->tileh != SLOPE_FLAT) DrawFoundation(ti, FOUNDATION_LEVELED);
+
+	DrawOverlay(ti, MP_HOUSE);
 
 	DrawGroundSprite(dcts->ground.sprite, dcts->ground.pal);
 
@@ -353,11 +396,11 @@ static bool IsCloseToTown(TileIndex tile, uint dist)
  */
 void Town::UpdateVirtCoord()
 {
+	this->UpdateLabel();
 	Point pt = RemapCoords2(TileX(this->xy) * TILE_SIZE, TileY(this->xy) * TILE_SIZE);
 	SetDParam(0, this->index);
 	SetDParam(1, this->cache.population);
-	this->cache.sign.UpdatePosition(pt.x, pt.y - 24 * ZOOM_LVL_BASE,
-		_settings_client.gui.population_in_label ? STR_VIEWPORT_TOWN_POP : STR_VIEWPORT_TOWN);
+	this->cache.sign.UpdatePosition(pt.x, pt.y - 24 * ZOOM_LVL_BASE, this->Label());
 
 	SetWindowDirty(WC_TOWN_VIEW, this->index);
 }
@@ -437,6 +480,61 @@ static void MakeTownHouseBigger(TileIndex tile)
 }
 
 /**
+ * Generate cargo for a town (house).
+ *
+ * The amount of cargo should be and will be greater than zero.
+ *
+ * @param t current town
+ * @param ct type of cargo to generate, usually CT_PASSENGERS or CT_MAIL
+ * @param amount how many units of cargo
+ * @param stations available stations for this house
+ */
+static void TownGenerateCargo (Town *t, CargoID ct, uint amount, StationFinder &stations, TileIndex tile)
+{
+	// custom cargo generation factor
+	int cf = _settings_game.economy.town_cargo_factor;
+
+	// when the economy flunctuates, everyone wants to stay at home
+	if (EconomyIsInRecession()) {
+		amount = (amount + 1) >> 1; 
+	}
+	
+	// apply custom factor?
+	if (cf < 0) {
+		// approx (amount / 2^cf)
+		// adjust with a constant offset of {(2 ^ cf) - 1} (i.e. add cf * 1-bits) before dividing to ensure that it doesn't become zero
+		// this skews the curve a little so that isn't entirely exponential, but will still decrease
+		amount = (amount + ((1 << -cf) - 1)) >> -cf;
+	}
+
+	else if (cf > 0) {
+		// approx (amount * 2^cf)
+		// XXX: overflow?
+		amount = amount << cf;
+	}
+	
+	// with the adjustments above, this should never happen
+	assert(amount > 0);
+	
+	// calculate for town stats
+	const CargoSpec *cs = CargoSpec::Get(ct);
+	switch (cs->town_effect) {
+		case TE_PASSENGERS:
+			t->supplied[CT_PASSENGERS].new_max += amount;
+			t->supplied[CT_PASSENGERS].new_act += MoveGoodsToStation(CT_PASSENGERS, amount, ST_TOWN, t->index, stations.GetStations(), tile);
+			break;
+
+		case TE_MAIL:
+			t->supplied[CT_MAIL].new_max += amount;
+			t->supplied[CT_MAIL].new_act += MoveGoodsToStation(CT_MAIL, amount, ST_TOWN, t->index, stations.GetStations(), tile);
+			break;
+
+		default:
+			break;
+	}
+}
+
+/**
  * Tile callback function.
  *
  * Periodic tic handler for houses and town
@@ -483,27 +581,31 @@ static void TileLoop_Town(TileIndex tile)
 			uint amt = GB(callback, 0, 8);
 			if (amt == 0) continue;
 
-			uint moved = MoveGoodsToStation(cargo, amt, ST_TOWN, t->index, stations.GetStations());
+//			uint moved = MoveGoodsToStation(cargo, amt, ST_TOWN, t->index, stations.GetStations(), tile);
 
-			const CargoSpec *cs = CargoSpec::Get(cargo);
-			t->supplied[cs->Index()].new_max += amt;
-			t->supplied[cs->Index()].new_act += moved;
+//			const CargoSpec *cs = CargoSpec::Get(cargo);
+//			t->supplied[cs->Index()].new_max += amt;
+//			t->supplied[cs->Index()].new_act += moved;
+                       // XXX: no economy flunctuation for GRF cargos?
+                       TownGenerateCargo(t, cargo, amt, stations, tile);
 		}
 	} else {
 		if (GB(r, 0, 8) < hs->population) {
 			uint amt = GB(r, 0, 8) / 8 + 1;
 
-			if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
-			t->supplied[CT_PASSENGERS].new_max += amt;
-			t->supplied[CT_PASSENGERS].new_act += MoveGoodsToStation(CT_PASSENGERS, amt, ST_TOWN, t->index, stations.GetStations());
+//			if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
+//			t->supplied[CT_PASSENGERS].new_max += amt;
+//			t->supplied[CT_PASSENGERS].new_act += MoveGoodsToStation(CT_PASSENGERS, amt, ST_TOWN, t->index, stations.GetStations(), tile);
+                       TownGenerateCargo(t, CT_PASSENGERS, amt, stations, tile);
 		}
 
 		if (GB(r, 8, 8) < hs->mail_generation) {
 			uint amt = GB(r, 8, 8) / 8 + 1;
 
-			if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
-			t->supplied[CT_MAIL].new_max += amt;
-			t->supplied[CT_MAIL].new_act += MoveGoodsToStation(CT_MAIL, amt, ST_TOWN, t->index, stations.GetStations());
+//			if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
+//			t->supplied[CT_MAIL].new_max += amt;
+//			t->supplied[CT_MAIL].new_act += MoveGoodsToStation(CT_MAIL, amt, ST_TOWN, t->index, stations.GetStations(), tile);
+                       TownGenerateCargo(t, CT_MAIL, amt, stations, tile);
 		}
 	}
 
@@ -680,17 +782,33 @@ static void ChangeTileOwner_Town(TileIndex tile, Owner old_owner, Owner new_owne
 void UpdateTownCargoTotal(Town *t)
 {
 	t->cargo_accepted_total = 0;
+	MemSetT(t->cargo_accepted_weights, 0, lengthof(t->cargo_accepted_weights));
 
+	/* Calculate the maximum weight based on the grid square furthest
+	 * from the town centre. The maximum weight is two times the L-inf
+	 * norm plus 1 so that max weight - furthest square weight == 1. */
 	const TileArea &area = t->cargo_accepted.GetArea();
+	uint max_dist = max(DistanceMax(t->xy_aligned, area.tile), DistanceMax(t->xy_aligned, TILE_ADDXY(area.tile, area.w - 1, area.h - 1))) / AcceptanceMatrix::GRID;
+	t->cargo_accepted_max_weight = max_dist * 2 + 1;
+
+	/* Collect acceptance from all grid squares. */
 	TILE_AREA_LOOP(tile, area) {
 		if (TileX(tile) % AcceptanceMatrix::GRID == 0 && TileY(tile) % AcceptanceMatrix::GRID == 0) {
-			t->cargo_accepted_total |= t->cargo_accepted[tile];
+			uint32 acc = t->cargo_accepted[tile];
+			t->cargo_accepted_total |= acc;
+
+			CargoID cid;
+			FOR_EACH_SET_CARGO_ID(cid, acc) {
+				/* For each accepted cargo, the grid square weight is the maximum weight
+				 * minus two times the L-inf norm between this square and the centre square. */
+				t->cargo_accepted_weights[cid] += t->cargo_accepted_max_weight - (DistanceMax(t->xy_aligned, tile) / AcceptanceMatrix::GRID) * 2;
+			}
 		}
 	}
 }
 
 /**
- * Update accepted town cargoes around a specific tile.
+ * Update accepted and produced town cargoes around a specific tile.
  * @param t The town to update.
  * @param start Update the values around this tile.
  * @param update_total Set to true if the total cargo acceptance should be updated.
@@ -700,7 +818,7 @@ static void UpdateTownCargoes(Town *t, TileIndex start, bool update_total = true
 	CargoArray accepted, produced;
 	uint32 dummy;
 
-	/* Gather acceptance for all houses in an area around the start tile.
+	/* Gather acceptance and production for all houses in an area around the start tile.
 	 * The area is composed of the square the tile is in, extended one square in all
 	 * directions as the coverage area of a single station is bigger than just one square. */
 	TileArea area = AcceptanceMatrix::GetAreaForTile(start, 1);
@@ -763,6 +881,11 @@ static void TownTickHandler(Town *t)
 		if (i < 0) {
 			if (GrowTown(t)) {
 				i = t->growth_rate & (~TOWN_GROW_RATE_CUSTOM);
+                               /* If we want same speed of town growth per game year */
+                               if (_settings_game.economy.slow_down_town_growth) {
+                                       i *= _settings_game.economy.day_length_factor;
+                               }
+
 			} else {
 				i = 0;
 			}
@@ -1537,6 +1660,11 @@ static void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize
 
 	t->larger_town = city;
 
+	/* Cache the aligned tile index of the centre tile. */
+	uint town_x = (TileX(t->xy) / AcceptanceMatrix::GRID) * AcceptanceMatrix::GRID;
+	uint town_y = (TileY(t->xy) / AcceptanceMatrix::GRID) * AcceptanceMatrix::GRID;
+	t->xy_aligned= TileXY(town_x, town_y);
+
 	int x = (int)size * 16 + 3;
 	if (size == TSZ_RANDOM) x = (Random() & 0xF) + 8;
 	/* Don't create huge cities when founding town in-game */
@@ -2184,7 +2312,18 @@ static bool BuildTownHouse(Town *t, TileIndex tile)
 
 	/* Above snow? */
 	int land = _settings_game.game_creation.landscape;
-	if (land == LT_ARCTIC && maxz > HighestSnowLine()) land = -1;
+       switch (land) {
+       case LT_ARCTIC:
+               if (maxz >= HighestSnowLine()) land = -1;
+               break;
+       case LT_TEMPERATE:
+               if (_settings_game.construction.snow_in_temperate && maxz >= HighestSnowLine()) land = -1;
+               break;
+       default:
+               break;
+       };
+
+
 
 	uint bitmask = (1 << rad) + (1 << (land + 12));
 
@@ -2425,6 +2564,8 @@ CommandCost CmdRenameTown(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32
 
 		t->UpdateVirtCoord();
 		InvalidateWindowData(WC_TOWN_DIRECTORY, 0, 1);
+		InvalidateWindowClassesData(WC_TOWN_VIEW);
+		InvalidateWindowClassesData(WC_INDUSTRY_VIEW);
 		UpdateAllStationVirtCoords();
 	}
 	return CommandCost();
@@ -2559,6 +2700,10 @@ CommandCost CmdExpandTown(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32
 	if (_game_mode != GM_EDITOR && _current_company != OWNER_DEITY) return CMD_ERROR;
 	Town *t = Town::GetIfValid(p1);
 	if (t == NULL) return CMD_ERROR;
+
+//	if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+//		cost.AffectCost( _settings_game.economy.day_length_balance_factor );
+//	}
 
 	if (flags & DC_EXEC) {
 		/* The more houses, the faster we grow */
@@ -2885,6 +3030,7 @@ static CommandCost TownActionBribe(Town *t, DoCommandFlag flags)
 			 */
 			if (t->ratings[_current_company] > RATING_BRIBE_DOWN_TO) {
 				t->ratings[_current_company] = RATING_BRIBE_DOWN_TO;
+				t->UpdateVirtCoord();
 				SetWindowDirty(WC_TOWN_AUTHORITY, t->index);
 			}
 		} else {
@@ -3017,6 +3163,7 @@ static void UpdateTownRating(Town *t)
 		t->ratings[i] = Clamp(t->ratings[i], RATING_MINIMUM, RATING_MAXIMUM);
 	}
 
+	t->UpdateVirtCoord();
 	SetWindowDirty(WC_TOWN_AUTHORITY, t->index);
 }
 
@@ -3270,6 +3417,7 @@ void ChangeTownRating(Town *t, int add, int max, DoCommandFlag flags)
 	} else {
 		SetBit(t->have_ratings, _current_company);
 		t->ratings[_current_company] = rating;
+		t->UpdateVirtCoord();
 		SetWindowDirty(WC_TOWN_AUTHORITY, t->index);
 	}
 }
@@ -3385,6 +3533,7 @@ extern const TileTypeProcs _tile_type_town_procs = {
 	NULL,                    // vehicle_enter_tile_proc
 	GetFoundation_Town,      // get_foundation_proc
 	TerraformTile_Town,      // terraform_tile_proc
+	NULL,                    // copypaste_tile_proc
 };
 
 

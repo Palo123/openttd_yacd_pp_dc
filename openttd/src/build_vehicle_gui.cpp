@@ -73,6 +73,12 @@ static const NWidgetPart _nested_build_vehicle_widgets[] = {
 	EndContainer(),
 	/* Panel with details. */
 	NWidget(WWT_PANEL, COLOUR_GREY, WID_BV_PANEL), SetMinimalSize(240, 122), SetResize(1, 0), EndContainer(),
+       /* Build and refit button. */
+       NWidget(NWID_HORIZONTAL),
+               NWidget(NWID_SELECTION, INVALID_COLOUR, WID_BV_BUILD_REFIT_SEL),
+                       NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_BV_BUILD_REFIT), SetResize(1, 0), SetFill(1, 0), 
+               EndContainer(),
+       EndContainer(),
 	/* Build/rename buttons, resize button. */
 	NWidget(NWID_HORIZONTAL),
 		NWidget(NWID_SELECTION, INVALID_COLOUR, WID_BV_BUILD_SEL),
@@ -970,12 +976,20 @@ struct BuildVehicleWindow : Window {
 		/* If we are just viewing the list of vehicles, we do not need the Build button.
 		 * So we just hide it, and enlarge the Rename button by the now vacant place. */
 		if (this->listview_mode) this->GetWidget<NWidgetStacked>(WID_BV_BUILD_SEL)->SetDisplayedPlane(SZSP_NONE);
+//               if (this->listview_mode) {
+//                       this->GetWidget<NWidgetStacked>(WID_BV_BUILD_SEL)->SetDisplayedPlane(SZSP_NONE);
+//                       this->GetWidget<NWidgetStacked>(WID_BV_BUILD_SEL)->SetDisplayedPlane(SZSP_HORIZONTAL);
+//               }
 
 		/* disable renaming engines in network games if you are not the server */
 		this->SetWidgetDisabledState(WID_BV_RENAME, _networking && !_network_server);
 
 		NWidgetCore *widget = this->GetWidget<NWidgetCore>(WID_BV_LIST);
 		widget->tool_tip = STR_BUY_VEHICLE_TRAIN_LIST_TOOLTIP + type;
+
+		widget = this->GetWidget<NWidgetCore>(WID_BV_BUILD_REFIT);
+		widget->widget_data = STR_BUY_REFIT_VEHICLE_TRAIN_BUY_VEHICLE_BUTTON + type;
+		widget->tool_tip    = STR_BUY_REFIT_VEHICLE_TRAIN_BUY_VEHICLE_TOOLTIP + type;
 
 		widget = this->GetWidget<NWidgetCore>(WID_BV_BUILD);
 		widget->widget_data = STR_BUY_VEHICLE_TRAIN_BUY_VEHICLE_BUTTON + type;
@@ -1250,6 +1264,17 @@ struct BuildVehicleWindow : Window {
 				ShowDropDownMenu(this, this->cargo_filter_texts, this->cargo_filter_criteria, WID_BV_CARGO_FILTER_DROPDOWN, 0, 0);
 				break;
 
+                       case WID_BV_BUILD_REFIT: {
+                               EngineID sel_eng = this->sel_engine;
+                               if (sel_eng != INVALID_ENGINE) {
+                                       CommandCallback *callback = (this->vehicle_type == VEH_TRAIN && RailVehInfo(sel_eng)->railveh_type == RAILVEH_WAGON) ? CcBuildWagon : CcBuildPrimaryVehicle;
+                                       if(DoCommandP(this->window_number, sel_eng, 0, GetCmdBuildVeh(this->vehicle_type), callback))
+                                               // refit to selected cargo filter
+                                               DoCommandP(this->window_number, _new_vehicle_id, this->cargo_filter[this->cargo_filter_criteria], GetCmdRefitVeh(this->vehicle_type));
+                               }
+                               break;
+                       }
+
 			case WID_BV_BUILD: {
 				EngineID sel_eng = this->sel_engine;
 				if (sel_eng != INVALID_ENGINE) {
@@ -1349,6 +1374,13 @@ struct BuildVehicleWindow : Window {
 	{
 		this->GenerateBuildList();
 		this->vscroll->SetCount(this->eng_list.Length());
+
+		// disable build and refit if all or none cargo type selected
+		if(_networking || this->cargo_filter[this->cargo_filter_criteria] == CF_ANY || this->cargo_filter[this->cargo_filter_criteria] == CF_NONE) {			
+			this->DisableWidget(WID_BV_BUILD_REFIT);
+		} else {
+			this->EnableWidget(WID_BV_BUILD_REFIT);
+		}
 
 		this->DrawWidgets();
 

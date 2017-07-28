@@ -336,6 +336,56 @@ CommandCost CmdBuildObject(TileIndex tile, DoCommandFlag flags, uint32 p1, uint3
 	return cost;
 }
 
+/**
+ * Build an object object
+ * @param tile end tile of area dragging
+ * @param flags operations to do
+ * @param p1 start tile of area dragging
+ * @param p2 some bit data.
+ * 1: Orthogonal Iterator 0: Diagonal Iterator
+ * @param text unused
+ * @return the cost of this operation or an error
+ */
+CommandCost CmdBuyLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 p2, const char *text)
+{
+	if (p1 >= MapSize()) return CMD_ERROR;
+	
+	Money money = GetAvailableMoneyForCommand();
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+	CommandCost last_error = CMD_ERROR;
+	bool had_success = false;
+	const Company *c = (flags & (DC_AUTO | DC_BANKRUPT)) ? NULL : Company::GetIfValid(_current_company);
+	int limit = (c == NULL) ? INT32_MAX : GB(c->clear_limit, 16, 16);
+	
+	TileArea ta(tile, p1);
+	TileIterator *iter = HasBit(p2, 0) ? (TileIterator*) new DiagonalTileIterator(tile, p1) : new OrthogonalTileIterator(ta);
+	
+	for (; *iter != INVALID_TILE; ++(*iter)) {
+		TileIndex t = *iter;
+		CommandCost ret = DoCommand(t, OBJECT_OWNED_LAND, 0, flags & ~DC_EXEC, CMD_BUILD_OBJECT);
+		if (ret.Failed()) {
+			last_error = ret;
+			
+			if (c != NULL && GB(c->clear_limit, 16, 16) < 1) break;
+			continue;
+		}
+		had_success = true;
+		if (flags & DC_EXEC) {
+			money -= ret.GetCost();
+			if (ret.GetCost() > 0 && money < 0) {
+				_additional_cash_required = ret.GetCost();
+				delete iter;
+				return cost;
+			}
+			DoCommand(t, OBJECT_OWNED_LAND, 0, flags, CMD_BUILD_OBJECT);
+		} else {
+			if(ret.GetCost() != 0 && --limit <= 0) break;
+		}
+		cost.AddCost(ret);
+	}
+	delete iter;
+	return had_success ? cost : last_error;
+}
 
 static Foundation GetFoundation_Object(TileIndex tile, Slope tileh);
 
@@ -586,7 +636,7 @@ static void TileLoop_Object(TileIndex tile)
 	if (GB(r, 0, 8) < (256 / 4 / (6 - level))) {
 		uint amt = GB(r, 0, 8) / 8 / 4 + 1;
 		if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
-		MoveGoodsToStation(CT_PASSENGERS, amt, ST_HEADQUARTERS, GetTileOwner(tile), stations.GetStations());
+		MoveGoodsToStation(CT_PASSENGERS, amt, ST_HEADQUARTERS, GetTileOwner(tile), stations.GetStations(), tile);
 	}
 
 	/* Top town building generates 90, HQ can make up to 196. The
@@ -595,7 +645,7 @@ static void TileLoop_Object(TileIndex tile)
 	if (GB(r, 8, 8) < (196 / 4 / (6 - level))) {
 		uint amt = GB(r, 8, 8) / 8 / 4 + 1;
 		if (EconomyIsInRecession()) amt = (amt + 1) >> 1;
-		MoveGoodsToStation(CT_MAIL, amt, ST_HEADQUARTERS, GetTileOwner(tile), stations.GetStations());
+		MoveGoodsToStation(CT_MAIL, amt, ST_HEADQUARTERS, GetTileOwner(tile), stations.GetStations(), tile);
 	}
 }
 
@@ -782,4 +832,5 @@ extern const TileTypeProcs _tile_type_object_procs = {
 	NULL,                        // vehicle_enter_tile_proc
 	GetFoundation_Object,        // get_foundation_proc
 	TerraformTile_Object,        // terraform_tile_proc
+	NULL,                        // copypaste_tile_proc
 };

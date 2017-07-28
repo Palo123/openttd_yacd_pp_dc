@@ -47,6 +47,8 @@ namespace SQConvert {
 	template <> inline int Return<ScriptWindow::BuildVehicleWidgets>(HSQUIRRELVM vm, ScriptWindow::BuildVehicleWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::CheatWidgets GetParam(ForceType<ScriptWindow::CheatWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::CheatWidgets)tmp; }
 	template <> inline int Return<ScriptWindow::CheatWidgets>(HSQUIRRELVM vm, ScriptWindow::CheatWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
+	template <> inline ScriptWindow::ClipboardToolbarWidgets GetParam(ForceType<ScriptWindow::ClipboardToolbarWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::ClipboardToolbarWidgets)tmp; }
+	template <> inline int Return<ScriptWindow::ClipboardToolbarWidgets>(HSQUIRRELVM vm, ScriptWindow::ClipboardToolbarWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::CompanyWidgets GetParam(ForceType<ScriptWindow::CompanyWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::CompanyWidgets)tmp; }
 	template <> inline int Return<ScriptWindow::CompanyWidgets>(HSQUIRRELVM vm, ScriptWindow::CompanyWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::CompanyFinancesWidgets GetParam(ForceType<ScriptWindow::CompanyFinancesWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::CompanyFinancesWidgets)tmp; }

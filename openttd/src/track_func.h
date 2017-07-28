@@ -15,6 +15,7 @@
 #include "core/bitmath_func.hpp"
 #include "track_type.h"
 #include "slope_func.h"
+#include "direction_func.h"
 
 /**
  * Iterate through each set Track in a TrackBits value.
@@ -26,6 +27,17 @@
  * @see FOR_EACH_SET_BIT_EX
  */
 #define FOR_EACH_SET_TRACK(var, track_bits) FOR_EACH_SET_BIT_EX(Track, var, TrackBits, track_bits)
+
+/**
+ * Iterate through each set Trackdir in a TrackdirBits value.
+ * For more informations see FOR_EACH_SET_BIT_EX.
+ *
+ * @param var Loop index variable that stores fallowing set track. Must be of type Track.
+ * @param trackdir_bits The value to iterate through (any expression).
+ *
+ * @see FOR_EACH_SET_BIT_EX
+ */
+#define FOR_EACH_SET_TRACKDIR(var, trackdir_bits) FOR_EACH_SET_BIT_EX(Trackdir, var, TrackdirBits, trackdir_bits)
 
 /**
  * Convert an Axis to the corresponding Track
@@ -653,6 +665,45 @@ static inline bool IsUphillTrackdir(Slope slope, Trackdir dir)
 {
 	extern const TrackdirBits _uphill_trackdirs[];
 	return HasBit(_uphill_trackdirs[RemoveHalftileSlope(slope)], dir);
+}
+
+/**
+ * Transform a Track.
+ * @param track The Track to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Track.
+ */
+static inline Track TransformTrack(Track track, DirTransformation transformation)
+{
+	extern const byte _track_transformation_map[DTR_END][TRACK_END];
+	return (Track)_track_transformation_map[transformation][track];
+}
+
+/**
+ * Transform a TrackBits.
+ * @param track_bits The TrackBits to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed TrackBits.
+ */
+static inline TrackBits TransformTrackBits(TrackBits track_bits, DirTransformation transformation)
+{
+	TrackBits ret = track_bits & ~TRACK_BIT_ALL;
+
+	Track t;
+	FOR_EACH_SET_TRACK(t, track_bits & TRACK_BIT_ALL) SetBit(ret, TransformTrack(t, transformation));
+
+	return ret;
+}
+
+/**
+ * Transform a Trackdir.
+ * @param trackdir The Trackdir to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Trackdir.
+ */
+static inline Trackdir TransformTrackdir(Trackdir trackdir, DirTransformation transformation)
+{
+	return TrackExitdirToTrackdir(TransformTrack(TrackdirToTrack(trackdir), transformation), TransformDiagDir(TrackdirToExitdir(trackdir), transformation));
 }
 
 #endif /* TRACK_FUNC_H */

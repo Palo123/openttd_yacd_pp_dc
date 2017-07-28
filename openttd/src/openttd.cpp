@@ -57,6 +57,7 @@
 #include "hotkeys.h"
 #include "newgrf.h"
 #include "misc/getoptdata.h"
+#include "clipboard_func.h"
 #include "game/game.hpp"
 #include "game/game_config.hpp"
 #include "town.h"
@@ -452,6 +453,12 @@ struct AfterNewGRFScan : NewGRFScanCallback {
 		/* Make sure _settings is filled with _settings_newgame if we switch to a game directly */
 		if (_switch_mode != SM_NONE) MakeNewgameSettingsLive();
 
+       // Check if not too much GRFs are loaded for network game
+       if ( dedicated_host != NULL &&  CountSelectedGRFs ( _grfconfig ) >= MAX_FILE_SLOTS_IN_NETWORK ) {
+               // ShowErrorMessage(STR_NEWGRF_ERROR_TOO_MANY_NEWGRFS_LOADED, INVALID_STRING_ID, WL_ERROR);
+               DEBUG(net, 0, "Too many GRF loaded. Max %d are allowed.\nExiting ...", MAX_FILE_SLOTS_IN_NETWORK );
+       }
+       else {
 #ifdef ENABLE_NETWORK
 		if (_network_available && network_conn != NULL) {
 			const char *port = NULL;
@@ -482,6 +489,7 @@ struct AfterNewGRFScan : NewGRFScanCallback {
 
 		/* After the scan we're not used anymore. */
 		delete this;
+	   }
 	}
 };
 
@@ -921,6 +929,24 @@ static void MakeNewGameDone()
 	MarkWholeScreenDirty();
 }
 
+/*
+ * Too large size may be stored in settings (especially if switching between between OpenTTD
+ * versions with different map size limits), we have to check if it is valid before generating world.
+ * Simple separate checking of X and Y map sizes is not enough, as their sum is what counts for the limit.
+ * Check the size and decrease the larger of the sizes till the size is in limit.
+ */
+static void FixConfigMapSize()
+{
+	while (_settings_game.game_creation.map_x + _settings_game.game_creation.map_y > MAX_MAP_TILES_BITS) {
+		/* Repeat reducing larger of X/Y dimensions until the map size is within allowable limits */
+		if (_settings_game.game_creation.map_x > _settings_game.game_creation.map_y) {
+			_settings_game.game_creation.map_x--;
+		} else {
+			_settings_game.game_creation.map_y--;
+		}
+	}
+}
+
 static void MakeNewGame(bool from_heightmap, bool reset_settings)
 {
 	_game_mode = GM_NORMAL;
@@ -928,6 +954,7 @@ static void MakeNewGame(bool from_heightmap, bool reset_settings)
 	ResetGRFConfig(true);
 
 	GenerateWorldSetCallback(&MakeNewGameDone);
+	FixConfigMapSize();
 	GenerateWorld(from_heightmap ? GWM_HEIGHTMAP : GWM_NEWGAME, 1 << _settings_game.game_creation.map_x, 1 << _settings_game.game_creation.map_y, reset_settings);
 }
 
@@ -943,6 +970,7 @@ static void MakeNewEditorWorld()
 	ResetGRFConfig(true);
 
 	GenerateWorldSetCallback(&MakeNewEditorWorldDone);
+	FixConfigMapSize();
 	GenerateWorld(GWM_EMPTY, 1 << _settings_game.game_creation.map_x, 1 << _settings_game.game_creation.map_y);
 }
 
@@ -1030,8 +1058,13 @@ void SwitchToMode(SwitchMode new_mode)
 		}
 	}
 #endif /* ENABLE_NETWORK */
-	/* Make sure all AI controllers are gone at quitting game */
-	if (new_mode != SM_SAVE_GAME) AI::KillAll();
+	if (new_mode != SM_SAVE_GAME) {
+		/* Make sure all AI controllers are gone at quitting game */
+		AI::KillAll();
+
+		/* Clear the clipboard */
+		ClearClipboard();
+	}
 
 	switch (new_mode) {
 		case SM_EDITOR: // Switch to scenario editor
@@ -1088,6 +1121,7 @@ void SwitchToMode(SwitchMode new_mode)
 		case SM_LOAD_HEIGHTMAP: // Load heightmap from scenario editor
 			SetLocalCompany(OWNER_NONE);
 
+			FixConfigMapSize();
 			GenerateWorld(GWM_HEIGHTMAP, 1 << _settings_game.game_creation.map_x, 1 << _settings_game.game_creation.map_y);
 			MarkWholeScreenDirty();
 			break;
@@ -1130,6 +1164,7 @@ void SwitchToMode(SwitchMode new_mode)
 
 		case SM_GENRANDLAND: // Generate random land within scenario editor
 			SetLocalCompany(OWNER_NONE);
+			FixConfigMapSize();
 			GenerateWorld(GWM_RANDOM, 1 << _settings_game.game_creation.map_x, 1 << _settings_game.game_creation.map_y);
 			/* XXX: set date */
 			MarkWholeScreenDirty();
@@ -1338,7 +1373,15 @@ void StateGameLoop()
 		IncreaseDate();
 		RunTileLoop();
 		CallVehicleTicks();
-		CallLandscapeTick();
+//		CallLandscapeTick();
+		_tick_skip_counter++;
+		if ( _tick_skip_counter == _settings_game.economy.slow_down_production )
+		    {
+			_tick_skip_counter = 0;
+//			RunTileLoop();
+			CallLandscapeTick();
+		    }
+
 		ClearStorageChanges(true);
 
 		AI::GameLoop();

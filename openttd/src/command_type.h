@@ -25,6 +25,7 @@ class CommandCost {
 	Money cost;       ///< The cost of this action
 	StringID message; ///< Warning message for when success is unset
 	bool success;     ///< Whether the comment went fine up to this moment
+	bool affected;
 	uint textref_stack_size;   ///< Number of uint32 values to put on the #TextRefStack for the error message.
 
 	static uint32 textref_stack[16];
@@ -33,25 +34,35 @@ public:
 	/**
 	 * Creates a command cost return with no cost and no error
 	 */
-	CommandCost() : expense_type(INVALID_EXPENSES), cost(0), message(INVALID_STRING_ID), success(true), textref_stack_size(0) {}
+//	CommandCost() : expense_type(INVALID_EXPENSES), cost(0), message(INVALID_STRING_ID), success(true), textref_stack_size(0) {}
+	CommandCost() : expense_type(INVALID_EXPENSES), cost(0), message(INVALID_STRING_ID), success(true), affected(false), textref_stack_size(0) {}
 
 	/**
 	 * Creates a command return value the is failed with the given message
 	 */
-	explicit CommandCost(StringID msg) : expense_type(INVALID_EXPENSES), cost(0), message(msg), success(false), textref_stack_size(0) {}
+	explicit CommandCost(StringID msg) : expense_type(INVALID_EXPENSES), cost(0), message(msg), success(false), affected(false), textref_stack_size(0) {}
 
 	/**
 	 * Creates a command cost with given expense type and start cost of 0
 	 * @param ex_t the expense type
 	 */
-	explicit CommandCost(ExpensesType ex_t) : expense_type(ex_t), cost(0), message(INVALID_STRING_ID), success(true), textref_stack_size(0) {}
+	explicit CommandCost(ExpensesType ex_t) : expense_type(ex_t), cost(0), message(INVALID_STRING_ID), success(true), affected(false), textref_stack_size(0) {}
 
 	/**
 	 * Creates a command return value with the given start cost and expense type
 	 * @param ex_t the expense type
 	 * @param cst the initial cost of this command
 	 */
-	CommandCost(ExpensesType ex_t, const Money &cst) : expense_type(ex_t), cost(cst), message(INVALID_STRING_ID), success(true), textref_stack_size(0) {}
+	CommandCost(ExpensesType ex_t, const Money &cst) : expense_type(ex_t), cost(cst), message(INVALID_STRING_ID), success(true), affected(false), textref_stack_size(0) {}
+
+        /**
+        * Creates a command return value with the given start cost, expense type
+        * and if already affected by day length
+        * @param ex_t the expense type
+        * @param cst the initial cost of this command
+        * @param aff if affected by day length
+        */
+       CommandCost(ExpensesType ex_t, Money cst, bool aff) : expense_type(ex_t), cost(cst), message(INVALID_STRING_ID), success(true), affected(aff), textref_stack_size(0) {}
 
 
 	/**
@@ -72,6 +83,33 @@ public:
 	inline void MultiplyCost(int factor)
 	{
 		this->cost *= factor;
+	}
+
+	/**
+	 * Multiplies the cost of command by given factor,
+	 * if not modified before.
+	 * Also set, that it was modified.
+	 * @param factor factor to multiply the costs with, if 0 just flag that modified
+	 * @return this class
+	 */
+	CommandCost AffectCost(uint8 factor = 0)
+	{
+		if (this->affected) return *this;
+		if (factor != 0) this->cost *= factor;
+		this->affected = true;
+		return *this;
+	}
+
+	/**
+	* Divides the cost of command by given factor.
+	* @param factor factor to divide the cost with
+	* @return this class
+	*/
+	CommandCost DivideCost(uint8 factor)
+	{
+		if (factor == 0) return *this;
+		this->cost /= factor;
+		return *this;
 	}
 
 	/**
@@ -150,6 +188,21 @@ public:
 	{
 		return !this->success;
 	}
+
+	/**
+	 * Compare equeal.
+	 *
+	 * In case of two successes, money and type of expenses are comapred.
+	 * In case of two failures, error message is comapred.
+	 *
+	 * @param cost the other cost to compare to
+	 * @return whether booth costs are equeal
+	 */
+	bool operator == (const CommandCost &cost) const
+	{
+		if (!this->success) return !cost.success && this->message == cost.message;
+		return cost.success && this->expense_type == cost.expense_type && this->cost == cost.cost;
+	}
 };
 
 /**
@@ -166,6 +219,7 @@ enum Commands {
 	CMD_BUILD_RAILROAD_TRACK,         ///< build a rail track
 	CMD_REMOVE_RAILROAD_TRACK,        ///< remove a rail track
 	CMD_BUILD_SINGLE_RAIL,            ///< build a single rail track
+	CMD_BUILD_SINGLE_RAILS,           ///< build a set of rail tracks on a single tile
 	CMD_REMOVE_SINGLE_RAIL,           ///< remove a single rail track
 	CMD_LANDSCAPE_CLEAR,              ///< demolish a tile
 	CMD_BUILD_BRIDGE,                 ///< build a bridge
@@ -175,6 +229,7 @@ enum Commands {
 	CMD_REMOVE_SIGNALS,               ///< remove a signal
 	CMD_TERRAFORM_LAND,               ///< terraform a tile
 	CMD_BUILD_OBJECT,                 ///< build an object
+	CMD_BUY_LAND,                     ///< Buy some land
 	CMD_BUILD_TUNNEL,                 ///< build a tunnel
 
 	CMD_REMOVE_FROM_RAIL_STATION,     ///< remove a (rectangle of) tiles from a rail station
@@ -289,6 +344,7 @@ enum Commands {
 	CMD_DEPOT_MASS_AUTOREPLACE,       ///< force the autoreplace to take action in a given depot
 
 	CMD_CREATE_GROUP,                 ///< create a new group
+	CMD_CREATE_GROUP_SPECIFIC_NAME,   ///< create a new group
 	CMD_DELETE_GROUP,                 ///< delete a group
 	CMD_RENAME_GROUP,                 ///< rename a group
 	CMD_ADD_VEHICLE_GROUP,            ///< add a vehicle to a group
@@ -301,8 +357,17 @@ enum Commands {
 	CMD_SET_VEHICLE_ON_TIME,          ///< set the vehicle on time feature (timetable)
 	CMD_AUTOFILL_TIMETABLE,           ///< autofill the timetable
 	CMD_SET_TIMETABLE_START,          ///< set the date that a timetable should start
+	CMD_REINIT_SEPARATION,            ///< reinit timetable separation with new parameters
 
 	CMD_OPEN_CLOSE_AIRPORT,           ///< open/close an airport to incoming aircraft
+	CMD_CHANGE_STATION_ACCEPTANCE,    ///< stop accepting/remove cargo from nearby industry
+
+	CMD_BUILD_TRAFFICLIGHTS,          ///< place traffic lights on a road crossing
+	CMD_REMOVE_TRAFFICLIGHTS,         ///< remove traffic lights
+
+	CMD_COPY_TO_CLIPBOARD,            ///< copy selected tile area into the clipboard
+	CMD_PASTE_FROM_CLIPBOARD,         ///< paste content of the clipboard onto the map
+	CMD_INSTANT_COPY_PASTE,           ///< copy selected tile area and instantly paste it at a given location
 
 	CMD_END,                          ///< Must ALWAYS be on the end of this list!! (period)
 };
@@ -313,19 +378,20 @@ enum Commands {
  * This enums defines some flags which can be used for the commands.
  */
 enum DoCommandFlag {
-	DC_NONE                  = 0x000, ///< no flag is set
-	DC_EXEC                  = 0x001, ///< execute the given command
-	DC_AUTO                  = 0x002, ///< don't allow building on structures
-	DC_QUERY_COST            = 0x004, ///< query cost only,  don't build.
-	DC_NO_WATER              = 0x008, ///< don't allow building on water
-	DC_NO_RAIL_OVERLAP       = 0x010, ///< don't allow overlap of rails (used in buildrail)
-	DC_NO_TEST_TOWN_RATING   = 0x020, ///< town rating does not disallow you from building
-	DC_BANKRUPT              = 0x040, ///< company bankrupts, skip money check, skip vehicle on tile check in some cases
-	DC_AUTOREPLACE           = 0x080, ///< autoreplace/autorenew is in progress, this shall disable vehicle limits when building, and ignore certain restrictions when undoing things (like vehicle attach callback)
-	DC_NO_CARGO_CAP_CHECK    = 0x100, ///< when autoreplace/autorenew is in progress, this shall prevent truncating the amount of cargo in the vehicle to prevent testing the command to remove cargo
-	DC_ALL_TILES             = 0x200, ///< allow this command also on MP_VOID tiles
-	DC_NO_MODIFY_TOWN_RATING = 0x400, ///< do not change town rating
-	DC_FORCE_CLEAR_TILE      = 0x800, ///< do not only remove the object on the tile, but also clear any water left on it
+	DC_NONE                  = 0x0000, ///< no flag is set
+	DC_EXEC                  = 0x0001, ///< execute the given command
+	DC_AUTO                  = 0x0002, ///< don't allow building on structures
+	DC_QUERY_COST            = 0x0004, ///< query cost only,  don't build.
+	DC_NO_WATER              = 0x0008, ///< don't allow building on water
+	DC_NO_RAIL_OVERLAP       = 0x0010, ///< don't allow overlap of rails (used in buildrail)
+	DC_NO_TEST_TOWN_RATING   = 0x0020, ///< town rating does not disallow you from building
+	DC_BANKRUPT              = 0x0040, ///< company bankrupts, skip money check, skip vehicle on tile check in some cases
+	DC_AUTOREPLACE           = 0x0080, ///< autoreplace/autorenew is in progress, this shall disable vehicle limits when building, and ignore certain restrictions when undoing things (like vehicle attach callback)
+	DC_NO_CARGO_CAP_CHECK    = 0x0100, ///< when autoreplace/autorenew is in progress, this shall prevent truncating the amount of cargo in the vehicle to prevent testing the command to remove cargo
+	DC_ALL_TILES             = 0x0200, ///< allow this command also on MP_VOID tiles
+	DC_NO_MODIFY_TOWN_RATING = 0x0400, ///< do not change town rating
+	DC_FORCE_CLEAR_TILE      = 0x0800, ///< do not only remove the object on the tile, but also clear any water left on it
+	DC_PASTE                 = 0x1000, ///< this command is a part of a paste process
 };
 DECLARE_ENUM_AS_BIT_SET(DoCommandFlag)
 

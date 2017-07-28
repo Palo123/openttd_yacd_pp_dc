@@ -12,6 +12,7 @@
 #include "../stdafx.h"
 #include "geometry_func.hpp"
 #include "math_func.hpp"
+#include "../map_func.h"
 
 /**
  * Compute bounding box of both dimensions.
@@ -25,4 +26,25 @@ Dimension maxdim(const Dimension &d1, const Dimension &d2)
 	d.width  = max(d1.width,  d2.width);
 	d.height = max(d1.height, d2.height);
 	return d;
+}
+
+/**
+ * Transform a given Point.
+ *
+ * The center point of the transformation is (0, 0).
+ * For example, point (1, 2) rotated 90 degree left is (-2, 1).
+ *
+ * @param point The Point to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Point.
+ */
+Point TransformPoint(Point point, DirTransformation transformation)
+{
+	TileIndexDiffC diff_from_x = TileIndexDiffCByDiagDir(TransformDiagDir(DIAGDIR_SW, transformation));
+	TileIndexDiffC diff_from_y = TileIndexDiffCByDiagDir(TransformDiagDir(DIAGDIR_SE, transformation));
+	Point ret = {
+		point.x * diff_from_x.x + point.y * diff_from_y.x,
+		point.x * diff_from_x.y + point.y * diff_from_y.y
+	};
+	return ret;
 }

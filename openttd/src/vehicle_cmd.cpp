@@ -28,8 +28,10 @@
 #include "autoreplace_gui.h"
 #include "group.h"
 #include "order_backup.h"
+#include "infrastructure_func.h"
 #include "ship.h"
 #include "newgrf.h"
+#include "cargodest_func.h"
 #include "company_base.h"
 
 #include "table/strings.h"
@@ -147,6 +149,7 @@ CommandCost CmdBuildVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, uint
 		if (v->IsPrimaryVehicle()) {
 			GroupStatistics::CountVehicle(v, 1);
 			OrderBackup::Restore(v, p2);
+			PrefillRouteLinks(v);
 		}
 	}
 
@@ -412,6 +415,7 @@ static CommandCost RefitVehicle(Vehicle *v, bool only_this, uint8 num_vehicles, 
  * @param p2 various bitstuffed elements
  * - p2 = (bit 0-4)   - New cargo type to refit to.
  * - p2 = (bit 6)     - Automatic refitting.
+ * - p2 = (bit 5)	  - Is a virtual train (used by template replacement to allow refitting without stopped-in-depot checks)
  * - p2 = (bit 7)     - Refit only this vehicle. Used only for cloning vehicles.
  * - p2 = (bit 8-15)  - New cargo subtype to refit to.
  * - p2 = (bit 16-23) - Number of vehicles to refit (not counting articulated parts). Zero means all vehicles.
@@ -430,17 +434,20 @@ CommandCost CmdRefitVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, uint
 
 	Vehicle *front = v->First();
 
-	CommandCost ret = CheckOwnership(front->owner);
+	CommandCost ret = CheckVehicleControlAllowed(v);
 	if (ret.Failed()) return ret;
 
 	bool auto_refit = HasBit(p2, 6);
 	bool free_wagon = v->type == VEH_TRAIN && Train::From(front)->IsFreeWagon(); // used by autoreplace/renew
+	bool is_virtual_train = HasBit(p2, 5);
 
 	/* Don't allow shadows and such to be refitted. */
 	if (v != front && (v->type == VEH_SHIP || v->type == VEH_AIRCRAFT)) return CMD_ERROR;
 	/* Allow auto-refitting only during loading and normal refitting only in a depot. */
-	if (!free_wagon && (!auto_refit || !front->current_order.IsType(OT_LOADING)) && !front->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAIN_MUST_BE_STOPPED_INSIDE_DEPOT + front->type);
-	if (front->vehstatus & VS_CRASHED) return_cmd_error(STR_ERROR_VEHICLE_IS_DESTROYED);
+	if ( ! is_virtual_train ) {
+		if (!free_wagon && (!auto_refit || !front->current_order.IsType(OT_LOADING)) && !front->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAIN_MUST_BE_STOPPED_INSIDE_DEPOT + front->type);
+		if (front->vehstatus & VS_CRASHED) return_cmd_error(STR_ERROR_VEHICLE_IS_DESTROYED);
+	}
 
 	/* Check cargo */
 	CargoID new_cid = GB(p2, 0, 5);
@@ -479,11 +486,17 @@ CommandCost CmdRefitVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, uint
 			default: NOT_REACHED();
 		}
 
+		if (front->IsPrimaryVehicle()) PrefillRouteLinks(front);
+
 		if (!free_wagon) {
 			InvalidateWindowData(WC_VEHICLE_DETAILS, front->index);
 			InvalidateWindowClassesData(GetWindowClassForVehicleType(v->type), 0);
 		}
-		SetWindowDirty(WC_VEHICLE_DEPOT, front->tile);
+		/* virtual vehicles get their cargo changed by the TemplateCreateWindow, so set this dirty instead of a depot window */
+		//if ( HasBit(v->subtype, GVSF_VIRTUAL) ) SetWindowDirty(WC_CREATE_TEMPLATE, -1); // MYGUI
+		if ( HasBit(v->subtype, GVSF_VIRTUAL) ) SetWindowClassesDirty(WC_CREATE_TEMPLATE);
+		else SetWindowDirty(WC_VEHICLE_DEPOT, front->tile);
+
 	} else {
 		/* Always invalidate the cache; querycost might have filled it. */
 		v->InvalidateNewGRFCacheOfChain();
@@ -509,7 +522,7 @@ CommandCost CmdStartStopVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, 
 	Vehicle *v = Vehicle::GetIfValid(p1);
 	if (v == NULL || !v->IsPrimaryVehicle()) return CMD_ERROR;
 
-	CommandCost ret = CheckOwnership(v->owner);
+	CommandCost ret = CheckVehicleControlAllowed(v);
 	if (ret.Failed()) return ret;
 
 	if (v->vehstatus & VS_CRASHED) return_cmd_error(STR_ERROR_VEHICLE_IS_DESTROYED);
@@ -568,6 +581,8 @@ CommandCost CmdStartStopVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, 
 		SetWindowWidgetDirty(WC_VEHICLE_VIEW, v->index, WID_VV_START_STOP);
 		SetWindowDirty(WC_VEHICLE_DEPOT, v->tile);
 		SetWindowClassesDirty(GetWindowClassForVehicleType(v->type));
+
+		v->MarkSeparationInvalid();
 	}
 	return CommandCost();
 }
@@ -668,7 +683,7 @@ CommandCost CmdDepotMassAutoReplace(TileIndex tile, DoCommandFlag flags, uint32 
 	VehicleType vehicle_type = Extract<VehicleType, 0, 3>(p1);
 
 	if (!IsCompanyBuildableVehicleType(vehicle_type)) return CMD_ERROR;
-	if (!IsDepotTile(tile) || !IsTileOwner(tile, _current_company)) return CMD_ERROR;
+	if (!IsDepotTile(tile) || !IsInfraUsageAllowed(vehicle_type, _current_company, GetTileOwner(tile))) return CMD_ERROR;
 
 	/* Get the list of vehicles in the depot */
 	BuildDepotVehicleList(vehicle_type, tile, &list, &list, true);

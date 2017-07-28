@@ -120,14 +120,15 @@ public:
 #	define LANDINFOD_LEVEL 1
 #endif
 		DEBUG(misc, LANDINFOD_LEVEL, "TILE: %#x (%i,%i)", tile, TileX(tile), TileY(tile));
-		DEBUG(misc, LANDINFOD_LEVEL, "type_height  = %#x", _m[tile].type_height);
-		DEBUG(misc, LANDINFOD_LEVEL, "m1           = %#x", _m[tile].m1);
-		DEBUG(misc, LANDINFOD_LEVEL, "m2           = %#x", _m[tile].m2);
-		DEBUG(misc, LANDINFOD_LEVEL, "m3           = %#x", _m[tile].m3);
-		DEBUG(misc, LANDINFOD_LEVEL, "m4           = %#x", _m[tile].m4);
-		DEBUG(misc, LANDINFOD_LEVEL, "m5           = %#x", _m[tile].m5);
-		DEBUG(misc, LANDINFOD_LEVEL, "m6           = %#x", _m[tile].m6);
-		DEBUG(misc, LANDINFOD_LEVEL, "m7           = %#x", _me[tile].m7);
+		DEBUG(misc, LANDINFOD_LEVEL, "type         = %#x", GetTile(tile)->type);
+		DEBUG(misc, LANDINFOD_LEVEL, "height       = %#x", GetTile(tile)->height);
+		DEBUG(misc, LANDINFOD_LEVEL, "m1           = %#x", GetTile(tile)->m1);
+		DEBUG(misc, LANDINFOD_LEVEL, "m2           = %#x", GetTile(tile)->m2);
+		DEBUG(misc, LANDINFOD_LEVEL, "m3           = %#x", GetTile(tile)->m3);
+		DEBUG(misc, LANDINFOD_LEVEL, "m4           = %#x", GetTile(tile)->m4);
+		DEBUG(misc, LANDINFOD_LEVEL, "m5           = %#x", GetTile(tile)->m5);
+		DEBUG(misc, LANDINFOD_LEVEL, "m6           = %#x", GetTileEx(tile)->m6);
+		DEBUG(misc, LANDINFOD_LEVEL, "m7           = %#x", GetTileEx(tile)->m7);
 #undef LANDINFOD_LEVEL
 	}
 
@@ -619,11 +620,13 @@ struct TooltipsWindow : public Window
 	byte paramcount;                  ///< Number of string parameters in #string_id.
 	uint64 params[5];                 ///< The string parameters.
 	TooltipCloseCondition close_cond; ///< Condition for closing the window.
+       char buffer[DRAW_STRING_BUFFER];  ///< Text to draw
 
 	TooltipsWindow(Window *parent, StringID str, uint paramcount, const uint64 params[], TooltipCloseCondition close_tooltip) : Window()
 	{
 		this->parent = parent;
 		this->string_id = str;
+               if (this->paramcount == 0) GetString(this->buffer, str, lastof(this->buffer)); // Get the text while params are still around
 		assert_compile(sizeof(this->params[0]) == sizeof(params[0]));
 		assert(paramcount <= lengthof(this->params));
 		memcpy(this->params, params, sizeof(this->params[0]) * paramcount);
@@ -674,10 +677,14 @@ struct TooltipsWindow : public Window
 		GfxFillRect(r.left, r.top, r.right, r.bottom, PC_BLACK);
 		GfxFillRect(r.left + 1, r.top + 1, r.right - 1, r.bottom - 1, PC_LIGHT_YELLOW);
 
-		for (uint arg = 0; arg < this->paramcount; arg++) {
-			SetDParam(arg, this->params[arg]);
+		if (this->paramcount == 0) {
+			DrawStringMultiLine(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, r.top + WD_FRAMERECT_TOP, r.bottom - WD_FRAMERECT_BOTTOM, this->buffer, TC_FROMSTRING, SA_CENTER);
+		} else {
+			for (uint arg = 0; arg < this->paramcount; arg++) {
+				SetDParam(arg, this->params[arg]);
+			}
+			DrawStringMultiLine(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, r.top + WD_FRAMERECT_TOP, r.bottom - WD_FRAMERECT_BOTTOM, this->string_id, TC_FROMSTRING, SA_CENTER);
 		}
-		DrawStringMultiLine(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, r.top + WD_FRAMERECT_TOP, r.bottom - WD_FRAMERECT_BOTTOM, this->string_id, TC_FROMSTRING, SA_CENTER);
 	}
 
 	virtual void OnMouseLoop()

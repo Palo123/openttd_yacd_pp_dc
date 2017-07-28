@@ -121,6 +121,9 @@ bool GUIPlaceProcDragXY(ViewportDragDropSelectionProcess proc, TileIndex start_t
 		case DDSP_LEVEL_AREA:
 			DoCommandP(end_tile, start_tile, LM_LEVEL << 1 | (_ctrl_pressed ? 1 : 0), CMD_LEVEL_LAND | CMD_MSG(STR_ERROR_CAN_T_LEVEL_LAND_HERE), CcTerraform);
 			break;
+		case DDSP_BUY_LAND:
+			DoCommandP(end_tile, start_tile, _ctrl_pressed ? 1 : 0, CMD_BUY_LAND | CMD_MSG(STR_ERROR_CAN_T_PURCHASE_THIS_LAND), CcPlaySound1E);
+			break;
 		case DDSP_CREATE_ROCKS:
 			GenerateRockyArea(end_tile, start_tile);
 			break;
@@ -141,6 +144,32 @@ bool GUIPlaceProcDragXY(ViewportDragDropSelectionProcess proc, TileIndex start_t
 void PlaceProc_DemolishArea(TileIndex tile)
 {
 	VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
+}
+/**
+ * Start a drag for buying an area.
+ * @param tile Position of the starting corner.
+ */
+void PlaceProc_BuyLand(TileIndex tile)
+{
+	if (_settings_game.construction.enable_land_buying)
+	{
+		if (_settings_game.construction.enable_restrictive_land_buying)
+		{
+			if (_settings_game.construction.drag_drop_land_buying_limit == 1) // 1x1, we don't need to bother with dragging and dropping, just execute the command like normal
+			{
+				DoCommandP(tile, OBJECT_OWNED_LAND, 0, CMD_BUILD_OBJECT | CMD_MSG(STR_ERROR_CAN_T_PURCHASE_THIS_LAND), CcPlaySound1E);
+			}
+			else
+			{
+				VpStartPlaceSizing(tile, VPM_X_AND_Y_LIMITED, DDSP_BUY_LAND);
+				VpSetPlaceSizingLimit(_settings_game.construction.drag_drop_land_buying_limit);
+			}
+		}
+		else //no limit
+		{
+			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUY_LAND);
+		}
+	}
 }
 
 /** Terra form toolbar managing class. */
@@ -164,6 +193,7 @@ struct TerraformToolbarWindow : Window {
 		/* Don't show the place object button when there are no objects to place. */
 		NWidgetStacked *show_object = this->GetWidget<NWidgetStacked>(WID_TT_SHOW_PLACE_OBJECT);
 		show_object->SetDisplayedPlane(ObjectClass::GetUIClassCount() != 0 ? 0 : SZSP_NONE);
+		this->SetWidgetDisabledState(WID_TT_BUY_LAND, _settings_game.construction.enable_land_buying ? false : true);
 	}
 
 	virtual void OnClick(Point pt, int widget, int click_count)
@@ -186,13 +216,19 @@ struct TerraformToolbarWindow : Window {
 				this->last_user_action = widget;
 				break;
 
+			case WID_TT_CLIPBOARD: // Show the clipboard toolbar
+				/* This button is NOT a place-push-button, so don't treat it as such */
+				this->HandleButtonClick(WID_TT_CLIPBOARD);
+				ShowClipboardToolbar();
+				break;
+
 			case WID_TT_DEMOLISH: // Demolish aka dynamite button
 				HandlePlacePushButton(this, WID_TT_DEMOLISH, ANIMCURSOR_DEMOLISH, HT_RECT | HT_DIAGONAL);
 				this->last_user_action = widget;
 				break;
 
 			case WID_TT_BUY_LAND: // Buy land button
-				HandlePlacePushButton(this, WID_TT_BUY_LAND, SPR_CURSOR_BUY_LAND, HT_RECT);
+				HandlePlacePushButton(this, WID_TT_BUY_LAND, SPR_CURSOR_BUY_LAND, HT_RECT | HT_DIAGONAL);
 				this->last_user_action = widget;
 				break;
 
@@ -246,7 +282,7 @@ struct TerraformToolbarWindow : Window {
 				break;
 
 			case WID_TT_BUY_LAND: // Buy land button
-				DoCommandP(tile, OBJECT_OWNED_LAND, 0, CMD_BUILD_OBJECT | CMD_MSG(STR_ERROR_CAN_T_PURCHASE_THIS_LAND), CcPlaySound1E);
+				PlaceProc_BuyLand(tile);
 				break;
 
 			case WID_TT_PLACE_SIGN: // Place sign button
@@ -282,6 +318,7 @@ struct TerraformToolbarWindow : Window {
 				case DDSP_RAISE_AND_LEVEL_AREA:
 				case DDSP_LOWER_AND_LEVEL_AREA:
 				case DDSP_LEVEL_AREA:
+				case DDSP_BUY_LAND:
 					GUIPlaceProcDragXY(select_proc, start_tile, end_tile);
 					break;
 			}
@@ -292,6 +329,11 @@ struct TerraformToolbarWindow : Window {
 	{
 		DeleteWindowById(WC_BUILD_OBJECT, 0);
 		this->RaiseButtons();
+	}
+	
+	virtual void OnHundredthTick()
+	{
+		this->SetWidgetDisabledState(WID_TT_BUY_LAND, _settings_game.construction.enable_land_buying ? false : true);
 	}
 
 	static Hotkey<TerraformToolbarWindow> terraform_hotkeys[];
@@ -326,6 +368,8 @@ static const NWidgetPart _nested_terraform_widgets[] = {
 
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetMinimalSize(4, 22), EndContainer(),
 
+		NWidget(WWT_PUSHIMGBTN, COLOUR_DARK_GREEN, WID_TT_CLIPBOARD), SetMinimalSize(22, 22),
+								SetFill(0, 1), SetDataTip(SPR_IMG_CLIPBOARD, STR_LANDSCAPING_TOOLTIP_SHOW_CLIPBOARD_TOOLBAR),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_TT_DEMOLISH), SetMinimalSize(22, 22),
 								SetFill(0, 1), SetDataTip(SPR_IMG_DYNAMITE, STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_TT_BUY_LAND), SetMinimalSize(22, 22),

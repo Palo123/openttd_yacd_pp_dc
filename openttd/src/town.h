@@ -15,9 +15,13 @@
 #include "viewport_type.h"
 #include "town_map.h"
 #include "subsidy_type.h"
+#include "openttd.h"
+#include "table/strings.h"
+#include "company_func.h"
 #include "newgrf_storage.h"
 #include "cargotype.h"
 #include "tilematrix_type.hpp"
+#include "cargodest_base.h"
 #include <list>
 
 template <typename T>
@@ -51,8 +55,9 @@ struct TownCache {
 };
 
 /** Town data structure. */
-struct Town : TownPool::PoolItem<&_town_pool> {
+struct Town : TownPool::PoolItem<&_town_pool>, CargoSourceSink {
 	TileIndex xy;                  ///< town center tile
+	TileIndex xy_aligned; ///< NOSAVE: Town centre aligned to the #AcceptanceMatrix grid.
 
 	TownCache cache; ///< Container for all cacheable data.
 
@@ -78,6 +83,7 @@ struct Town : TownPool::PoolItem<&_town_pool> {
 	CompanyByte exclusivity;       ///< which company has exclusivity
 	uint8 exclusive_counter;       ///< months till the exclusivity expires
 	int16 ratings[MAX_COMPANIES];  ///< ratings of each company for this town
+	StringID town_label;           ///< Label dependent on _local_company rating.
 
 	TransportedCargoStat<uint32> supplied[NUM_CARGO]; ///< Cargo statistics about supplied cargo.
 	TransportedCargoStat<uint16> received[NUM_TE];    ///< Cargo statistics about received cargotypes.
@@ -105,6 +111,34 @@ struct Town : TownPool::PoolItem<&_town_pool> {
 
 	std::list<PersistentStorage *> psa_list;
 
+	/* Current cargo acceptance and production. */
+	uint32 cargo_accepted_weights[NUM_CARGO]; ///< NOSAVE: Weight sum of accepting squares per cargo.
+	uint32 cargo_accepted_max_weight; ///< NOSAVE: Cached maximum weight for an accepting square.
+
+	void UpdateLabel();
+
+	/**
+	 * Returns the correct town label, based on rating.
+	 */
+	inline StringID Label() const{
+		if (!(_game_mode == GM_EDITOR) && (_local_company < MAX_COMPANIES)) {
+			return STR_VIEWPORT_TOWN_POP_VERY_POOR_RATING + this->town_label;
+		} else {
+			return _settings_client.gui.population_in_label ? STR_VIEWPORT_TOWN_POP : STR_VIEWPORT_TOWN;
+		}
+	}
+
+	/**
+	 * Returns the correct town small label, based on rating.
+	 */
+	inline StringID SmallLabel() const{
+		if (!(_game_mode == GM_EDITOR) && (_local_company < MAX_COMPANIES)) {
+			return STR_VIEWPORT_TOWN_TINY_VERY_POOR_RATING + this->town_label;
+		} else {
+			return STR_VIEWPORT_TOWN_TINY_WHITE;
+		}
+	}
+
 	/**
 	 * Creates a new town.
 	 * @param tile center tile of the town
@@ -115,6 +149,30 @@ struct Town : TownPool::PoolItem<&_town_pool> {
 	~Town();
 
 	void InitializeLayout(TownLayout layout);
+
+	/* virtual */ SourceType GetType() const
+	{
+		return ST_TOWN;
+	}
+
+	/* virtual */ SourceID GetID() const
+	{
+		return this->index;
+	}
+
+	/* virtual */ bool AcceptsCargo(CargoID cid) const
+	{
+		return HasBit(this->cargo_accepted_total, cid);
+	}
+
+	/* virtual */ bool SuppliesCargo(CargoID cid) const
+	{
+		return HasBit(this->cargo_produced, cid);
+	}
+
+	/* virtual */ uint GetDestinationWeight(CargoID cid, byte weight_mod) const;
+	/* virtual */ void CreateSpecialLinks(CargoID cid);
+	/* virtual */ TileArea GetTileForDestination(CargoID cid);
 
 	/**
 	 * Calculate the max town noise.
@@ -137,7 +195,10 @@ struct Town : TownPool::PoolItem<&_town_pool> {
 		return Town::Get(GetTownIndex(tile));
 	}
 
-	static Town *GetRandom();
+	/** Callback function for #Town::GetRandom. */
+	typedef bool (*EnumTownProc)(const Town *t, void *data);
+
+	static Town *GetRandom(EnumTownProc enum_proc = NULL, TownID skip = INVALID_TOWN, void *data = NULL);
 	static void PostDestructor(size_t index);
 };
 

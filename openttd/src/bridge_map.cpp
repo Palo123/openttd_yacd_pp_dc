@@ -19,9 +19,10 @@
  * @param tile the bridge tile to find the bridge ramp for
  * @param dir  the direction to search in
  */
-static TileIndex GetBridgeEnd(TileIndex tile, DiagDirection dir)
+template <bool Tgeneric>
+static typename TileIndexT<Tgeneric>::T GetBridgeEnd(typename TileIndexT<Tgeneric>::T tile, DiagDirection dir)
 {
-	TileIndexDiff delta = TileOffsByDiagDir(dir);
+	TileIndexDiff delta = TileOffsByDiagDir<Tgeneric>(dir, MapOf(tile));
 
 	dir = ReverseDiagDir(dir);
 	do {
@@ -30,6 +31,10 @@ static TileIndex GetBridgeEnd(TileIndex tile, DiagDirection dir)
 
 	return tile;
 }
+/** @copydoc GetBridgeEnd(TileIndexT<Tgeneric>::T,DiagDirection) */
+static inline TileIndex GetBridgeEnd(TileIndex t, DiagDirection dir) { return GetBridgeEnd<false>(t, dir); }
+/** @copydoc GetBridgeEnd(TileIndexT<Tgeneric>::T,DiagDirection) */
+static inline GenericTileIndex GetBridgeEnd(GenericTileIndex t, DiagDirection dir) { return GetBridgeEnd<true>(t, dir); }
 
 
 /**
@@ -56,18 +61,23 @@ TileIndex GetSouthernBridgeEnd(TileIndex t)
  * Starting at one bridge end finds the other bridge end
  * @param t the bridge ramp tile to find the other bridge ramp for
  */
-TileIndex GetOtherBridgeEnd(TileIndex tile)
+template <bool Tgeneric>
+typename TileIndexT<Tgeneric>::T GetOtherBridgeEnd(typename TileIndexT<Tgeneric>::T tile)
 {
 	assert(IsBridgeTile(tile));
 	return GetBridgeEnd(tile, GetTunnelBridgeDirection(tile));
 }
+/* instantiate */
+template TileIndex GetOtherBridgeEnd<false>(TileIndex tile);
+template GenericTileIndex GetOtherBridgeEnd<true>(GenericTileIndex tile);
 
 /**
  * Get the height ('z') of a bridge.
  * @param tile the bridge ramp tile to get the bridge height from
  * @return the height of the bridge.
  */
-int GetBridgeHeight(TileIndex t)
+template <bool Tgeneric>
+int GetBridgeHeight(typename TileIndexT<Tgeneric>::T t)
 {
 	int h;
 	Slope tileh = GetTileSlope(t, &h);
@@ -76,3 +86,6 @@ int GetBridgeHeight(TileIndex t)
 	/* one height level extra for the ramp */
 	return h + 1 + ApplyFoundationToSlope(f, &tileh);
 }
+/* instantiate */
+template int GetBridgeHeight<false>(TileIndex t);
+template int GetBridgeHeight<true>(GenericTileIndex t);

@@ -141,7 +141,7 @@ struct RailtypeInfo {
 		SpriteID signals[SIGTYPE_END][2][2]; ///< signal GUI sprites (type, variant, state)
 	} gui_sprites;
 
-	struct {
+	struct Cursor {
 		CursorID rail_ns;    ///< Cursor for building rail in N-S direction
 		CursorID rail_swne;  ///< Cursor for building rail in X direction
 		CursorID rail_ew;    ///< Cursor for building rail in E-W direction

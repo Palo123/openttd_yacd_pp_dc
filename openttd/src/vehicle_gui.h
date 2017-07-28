@@ -18,8 +18,9 @@
 #include "station_type.h"
 #include "engine_type.h"
 #include "company_type.h"
+#include <list>
 
-void ShowVehicleRefitWindow(const Vehicle *v, VehicleOrderID order, Window *parent, bool auto_refit = false);
+void ShowVehicleRefitWindow(const Vehicle *v, VehicleOrderID order, Window *parent, bool auto_refit = false, bool is_virtual_train = false);
 
 /** The tabs in the train details window */
 enum TrainDetailsWindowTabs {
@@ -36,6 +37,22 @@ enum VehicleInvalidateWindowData {
 	VIWD_CONSIST_CHANGED   = -3, ///< Vehicle composition was changed.
 	VIWD_AUTOREPLACE       = -4, ///< Autoreplace replaced the vehicle.
 };
+
+/** List item for one destination. */
+struct CargoDestSummaryData {
+	SourceID dest;     ///< Destination ID
+	SourceType type;   ///< Destination type
+	uint count;        ///< Cargo count
+
+	CargoDestSummaryData(SourceID dest, SourceType type, uint count)
+		: dest(dest), type(type), count(count)
+	{ }
+};
+
+/** List of cargo amounts grouped by final destination. */
+typedef std::list<CargoDestSummaryData> CargoDestSummary;
+
+void AddVehicleCargoDestSummary(const Vehicle *v, CargoDestSummary *sum);
 
 int DrawVehiclePurchaseInfo(int left, int right, int y, EngineID engine_number);
 
@@ -100,5 +117,7 @@ void StartStopVehicle(const Vehicle *v, bool texteffect);
 Vehicle *CheckClickOnVehicle(const struct ViewPort *vp, int x, int y);
 
 void DrawVehicleImage(const Vehicle *v, int left, int right, int y, VehicleID selection, EngineImageType image_type, int skip);
+
+void ShowTripHistoryWindow(const Vehicle *v);
 
 #endif /* VEHICLE_GUI_H */

@@ -193,17 +193,36 @@ void Industry::PostDestructor(size_t index)
 
 
 /**
- * Return a random valid industry.
- * @return random industry, NULL if there are no industries
+ * Return a random industry that statisfies some criteria
+ * specified with a callback function.
+ *
+ * @param enum_proc Callback function. Return true for a matching industry and false to continue iterating.
+ * @param skip Skip over this industry id when searching.
+ * @param data Optional data passed to the callback function.
+ * @return An industry satisfying the search criteria or NULL if no such industry exists.
  */
-/* static */ Industry *Industry::GetRandom()
+/* static */ Industry *Industry::GetRandom(EnumIndustryProc enum_proc, IndustryID skip, void *data)
 {
-	if (Industry::GetNumItems() == 0) return NULL;
-	int num = RandomRange((uint16)Industry::GetNumItems());
-	size_t index = MAX_UVALUE(size_t);
+	assert(skip == INVALID_INDUSTRY || Industry::IsValidID(skip));
 
-	while (num >= 0) {
-		num--;
+	uint16 max_num = 0;
+	if (enum_proc != NULL) {
+		/* A callback was given, count all matching industries. */
+		Industry *ind;
+		FOR_ALL_INDUSTRIES(ind) {
+			if (ind->index != skip && enum_proc(ind, data)) max_num++;
+		}
+	} else {
+		max_num = (uint16)Industry::GetNumItems();
+		/* Subtract one if an industry to skip was given. max_num is at least
+		* one here as otherwise skip could not be valid. */
+		if (skip != INVALID_INDUSTRY) max_num--;
+	}
+	if (max_num == 0) return NULL;
+
+	uint num = RandomRange(max_num) + 1;
+	size_t index = MAX_UVALUE(size_t);
+	do {
 		index++;
 
 		/* Make sure we have a valid industry */
@@ -211,7 +230,9 @@ void Industry::PostDestructor(size_t index)
 			index++;
 			assert(index < Industry::GetPoolSize());
 		}
-	}
+
+		if (index != skip && (enum_proc == NULL || enum_proc(Industry::Get(index), data))) num--;
+	} while (num > 0);
 
 	return Industry::Get(index);
 }
@@ -339,6 +360,8 @@ static void DrawTile_Industry(TileInfo *ti)
 	} else {
 		DrawGroundSprite(image, GroundSpritePaletteTransform(image, dits->ground.pal, GENERAL_SPRITE_COLOUR(ind->random_colour)));
 	}
+
+	DrawOverlay(ti, MP_INDUSTRY);
 
 	/* If industries are transparent and invisible, do not draw the upper part */
 	if (IsInvisibilitySet(TO_INDUSTRIES)) return;
@@ -506,7 +529,7 @@ static void TransportIndustryGoods(TileIndex tile)
 
 			i->this_month_production[j] += cw;
 
-			uint am = MoveGoodsToStation(i->produced_cargo[j], cw, ST_INDUSTRY, i->index, stations.GetStations());
+			uint am = MoveGoodsToStation(i->produced_cargo[j], cw, ST_INDUSTRY, i->index, stations.GetStations(), tile);
 			i->this_month_transported[j] += am;
 
 			moved_cargo |= (am != 0);
@@ -1583,6 +1606,28 @@ static CommandCost CheckIfFarEnoughFromConflictingIndustry(TileIndex tile, int t
 	return CommandCost();
 }
 
+/** Update the mask of always accepted cargoes that are also produced. */
+void UpdateIndustryAcceptance(Industry *ind)
+{
+	CargoArray accepted;
+	uint32 always_accepted = 0;
+
+	/* Gather always accepted cargoes for all tiles of this industry. */
+	TILE_AREA_LOOP(tile, ind->location) {
+		if (IsTileType(tile, MP_INDUSTRY) && GetIndustryIndex(tile) == ind->index) {
+			AddAcceptedCargo_Industry(tile, accepted, &always_accepted);
+		}
+	}
+
+	/* Create mask of produced cargoes. */
+	uint32 produced = 0;
+	for (uint i = 0; i < lengthof(ind->produced_cargo); i++) {
+		if (ind->produced_cargo[i] != CT_INVALID) SetBit(produced, ind->produced_cargo[i]);
+	}
+
+	ind->produced_accepted_mask = always_accepted & produced;
+}
+
 /**
  * Advertise about a new industry opening.
  * @param ind Industry being opened.
@@ -1756,6 +1801,7 @@ static void DoCreateNewIndustry(Industry *i, TileIndex tile, IndustryType type, 
 	}
 	InvalidateWindowData(WC_INDUSTRY_DIRECTORY, 0, 0);
 
+	UpdateIndustryAcceptance(i);
 	Station::RecomputeIndustriesNearForAll();
 }
 
@@ -1908,7 +1954,13 @@ CommandCost CmdBuildIndustry(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 		AdvertiseIndustryOpening(ind);
 	}
 
-	return CommandCost(EXPENSES_OTHER, indspec->GetConstructionCost());
+	CommandCost cost(EXPENSES_OTHER, indspec->GetConstructionCost());
+
+	if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+		cost.AffectCost(_settings_game.economy.day_length_balance_factor);
+	}
+
+	return cost;
 }
 
 
@@ -2153,6 +2205,9 @@ static void UpdateIndustryStatistics(Industry *i)
 
 			i->last_month_transported[j] = i->this_month_transported[j];
 			i->this_month_transported[j] = 0;
+
+			/* Average production over the last eight months. */
+			i->average_production[j] = (i->average_production[j] * 7 + i->last_month_production[j]) / 8;
 		}
 	}
 }
@@ -2671,7 +2726,12 @@ void IndustryDailyLoop()
 		perc = min(9u, perc + (_industry_builder.wanted_inds >> 16) - GetCurrentTotalNumberOfIndustries());
 	}
 	for (uint16 j = 0; j < change_loop; j++) {
-		if (Chance16(perc, 100)) {
+               /* industry for taxes */
+               if (_economy.industry_helper > _price[PR_BUILD_INDUSTRY] << 3) {
+                       _economy.industry_helper -= _price[PR_BUILD_INDUSTRY] << 3;
+                       _industry_builder.TryBuildNewIndustry();
+//		if (Chance16(perc, 100)) {
+		} else if (Chance16(perc, 100)) {
 			_industry_builder.TryBuildNewIndustry();
 		} else {
 			Industry *i = Industry::GetRandom();
@@ -2697,6 +2757,7 @@ void IndustryMonthlyLoop()
 	Industry *i;
 	FOR_ALL_INDUSTRIES(i) {
 		UpdateIndustryStatistics(i);
+		UpdateIndustryAcceptance(i);
 		if (i->prod_level == PRODLEVEL_CLOSURE) {
 			delete i;
 		} else {
@@ -2817,4 +2878,5 @@ extern const TileTypeProcs _tile_type_industry_procs = {
 	NULL,                        // vehicle_enter_tile_proc
 	GetFoundation_Industry,      // get_foundation_proc
 	TerraformTile_Industry,      // terraform_tile_proc
+	NULL,                        // copypaste_tile_proc
 };

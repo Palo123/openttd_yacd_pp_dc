@@ -197,7 +197,7 @@ void UpdateOldAircraft()
 			if (a->subtype == AIR_HELICOPTER) a->Next()->Next()->cur_speed = 32;
 
 			/* set new position x,y,z */
-			SetAircraftPosition(a, gp.x, gp.y, GetAircraftFlyingAltitude(a));
+			SetAircraftPosition(a, gp.x, gp.y, GetAircraftMaxAltitude(a->x_pos, a->y_pos, 0));
 		}
 	}
 }
@@ -352,7 +352,7 @@ void AfterLoadVehicles(bool part_of_load)
 			}
 		}
 
-		if (IsSavegameVersionBefore(180)) {
+		if (IsSavegameVersionBefore(181)) {
 			/* Set service interval flags */
 			FOR_ALL_VEHICLES(v) {
 				if (!v->IsPrimaryVehicle()) continue;
@@ -417,6 +417,31 @@ void AfterLoadVehicles(bool part_of_load)
 			 * other vehicle types didn't have zero speed while stopped (even in 'recent' OTTD versions) */
 			if ((v->vehstatus & VS_STOPPED) && (v->type != VEH_TRAIN || IsSavegameVersionBefore(2, 1))) {
 				v->cur_speed = 0;
+			}
+		}
+	}
+	
+	/* set non zero max signal speed */
+	
+	if (part_of_load && IsSavegameVersionBefore(203)) {
+		FOR_ALL_VEHICLES(v) {
+			if (v->type == VEH_TRAIN) {
+				Train *t = Train::From(v);
+				if (t->IsFrontEngine()) {
+					t->max_signal_speed = UINT16_MAX;
+				}
+			}
+		}
+	}
+	
+	if (part_of_load && IsSavegameVersionBefore(205)) {
+		FOR_ALL_VEHICLES(v) {
+			if (v->type == VEH_TRAIN) {
+				Train *t = Train::From(v);
+				if (t->IsFrontEngine()) {
+					t->double_yellow_signal_speed = UINT16_MAX;
+					t->yellow_signal_speed = UINT16_MAX;
+				}
 			}
 		}
 	}
@@ -604,6 +629,8 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		     SLE_VAR(Vehicle, vehstatus,             SLE_UINT8),
 		 SLE_CONDVAR(Vehicle, last_station_visited,  SLE_FILE_U8  | SLE_VAR_U16,   0,   4),
 		 SLE_CONDVAR(Vehicle, last_station_visited,  SLE_UINT16,                   5, SL_MAX_VERSION),
+		 SLE_CONDVAR(Vehicle, last_station_loaded,   SLE_UINT16,                 181, SL_MAX_VERSION),
+		 SLE_CONDVAR(Vehicle, last_order_id,         SLE_UINT16,                 181, SL_MAX_VERSION),
 
 		     SLE_VAR(Vehicle, cargo_type,            SLE_UINT8),
 		 SLE_CONDVAR(Vehicle, cargo_subtype,         SLE_UINT8,                   35, SL_MAX_VERSION),
@@ -616,6 +643,7 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		 SLE_CONDLST(Vehicle, cargo.packets,         REF_CARGO_PACKET,            68, SL_MAX_VERSION),
 		 SLE_CONDVAR(Vehicle, cargo_age_counter,     SLE_UINT16,                 162, SL_MAX_VERSION),
 
+		 SLE_CONDVAR(Vehicle, travel_time,           SLE_UINT32,                 181, SL_MAX_VERSION),
 		     SLE_VAR(Vehicle, day_counter,           SLE_UINT8),
 		     SLE_VAR(Vehicle, tick_counter,          SLE_UINT8),
 		 SLE_CONDVAR(Vehicle, running_ticks,         SLE_UINT8,                   88, SL_MAX_VERSION),
@@ -635,6 +663,7 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		 SLE_CONDVAR(Vehicle, current_order.type,    SLE_UINT8,                    5, SL_MAX_VERSION),
 		 SLE_CONDVAR(Vehicle, current_order.flags,   SLE_UINT8,                    5, SL_MAX_VERSION),
 		 SLE_CONDVAR(Vehicle, current_order.dest,    SLE_UINT16,                   5, SL_MAX_VERSION),
+		 SLE_CONDVAR(Vehicle, current_order.index,   SLE_UINT16,                 181, SL_MAX_VERSION),
 
 		/* Refit in current order */
 		 SLE_CONDVAR(Vehicle, current_order.refit_cargo,   SLE_UINT8,             36, SL_MAX_VERSION),
@@ -696,6 +725,27 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 
 		SLE_CONDNULL(10,                                                           2, 143), // old reserved space
 
+		// Trip History Arrays
+		SLE_CONDVAR(Vehicle, trip_history.t[0].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[1].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[2].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[3].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[4].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[5].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[6].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[7].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[8].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[9].profit,     SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[0].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[1].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[2].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[3].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[4].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[5].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[6].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[7].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[8].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
+		SLE_CONDVAR(Vehicle, trip_history.t[9].date,       SLE_INT64,     SL_TRIP, SL_MAX_VERSION),
 		     SLE_END()
 	};
 
@@ -713,6 +763,10 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		SLE_CONDNULL(2, 2, 59),
 
 		 SLE_CONDVAR(Train, wait_counter,        SLE_UINT16,                 136, SL_MAX_VERSION),
+		 SLE_CONDVAR(Train, max_signal_speed,    SLE_UINT16,                 203, SL_MAX_VERSION),
+		 SLE_CONDVAR(Train, yellow_signal_speed,    SLE_UINT16,                 205, SL_MAX_VERSION),
+		 SLE_CONDVAR(Train, double_yellow_signal_speed,    SLE_UINT16,                 205, SL_MAX_VERSION),
+		 SLE_CONDVAR(Train, planned_speed,    SLE_UINT16,                 206, SL_MAX_VERSION),
 
 		SLE_CONDNULL(2, 2, 19),
 		 SLE_CONDVAR(Train, gv_flags,            SLE_UINT16,                 139, SL_MAX_VERSION),
@@ -765,6 +819,9 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		 SLE_CONDVAR(Aircraft, previous_pos,          SLE_UINT8,                    2, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, last_direction,        SLE_UINT8,                    2, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, number_consecutive_turns, SLE_UINT8,                 2, SL_MAX_VERSION),
+
+		 SLE_CONDVAR(Aircraft, in_max_height_correction, SLE_BOOL,     MORE_HEIGHTLEVEL_SAVEGAME_VERSION, SL_MAX_VERSION),
+		 SLE_CONDVAR(Aircraft, in_min_height_correction, SLE_BOOL,     MORE_HEIGHTLEVEL_SAVEGAME_VERSION, SL_MAX_VERSION),
 
 		 SLE_CONDVAR(Aircraft, turn_counter,          SLE_UINT8,                  136, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, flags,                 SLE_UINT8,                  167, SL_MAX_VERSION),
@@ -836,6 +893,8 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 
 		     SLE_VAR(DisasterVehicle, image_override,            SLE_UINT16),
 		     SLE_VAR(DisasterVehicle, big_ufo_destroyer_target,  SLE_UINT16),
+		 SLE_CONDVAR(DisasterVehicle, in_max_height_correction, SLE_UINT8,     MORE_HEIGHTLEVEL_SAVEGAME_VERSION, SL_MAX_VERSION),
+		 SLE_CONDVAR(DisasterVehicle, in_min_height_correction, SLE_UINT8,     MORE_HEIGHTLEVEL_SAVEGAME_VERSION, SL_MAX_VERSION),
 
 		SLE_CONDNULL(16,                                                           2, 143), // old reserved space
 

@@ -102,7 +102,7 @@ void GroundVehicle<T, Type>::CargoChanged()
  * @return Current acceleration of the vehicle.
  */
 template <class T, VehicleType Type>
-int GroundVehicle<T, Type>::GetAcceleration() const
+int GroundVehicle<T, Type>::GetAcceleration(AccelerationModel accel_model) const
 {
 	/* Templated class used for function calls for performance reasons. */
 	const T *v = T::From(this);
@@ -148,6 +148,8 @@ int GroundVehicle<T, Type>::GetAcceleration() const
 		force = (mode == AS_ACCEL && !maglev) ? min(max_te, power) : power;
 		force = max(force, (mass * 8) + resistance);
 	}
+	
+	bool yaam = accel_model == AM_YAAM;
 
 	if (mode == AS_ACCEL) {
 		/* Easy way out when there is no acceleration. */
@@ -158,9 +160,16 @@ int GroundVehicle<T, Type>::GetAcceleration() const
 		 * down hill will never slow down enough, and a vehicle that came up
 		 * a hill will never speed up enough to (eventually) get back to the
 		 * same (maximum) speed. */
-		int accel = (force - resistance) / (mass * 4);
+		int accel = ClampToI32((force - resistance) / (mass * (yaam ? 1 : 4)));
+		if (yaam) return (force < resistance ? min(-1, accel) : max(1, accel)) / (maglev ? 15 : 30);
 		return force < resistance ? min(-1, accel) : max(1, accel);
 	} else {
+		if (yaam) {
+			force = max_te;
+			int64 force2 = mass * (!maglev ? 1000 : 4000);
+			force += force2;
+			return ClampToI32(min(-force - resistance, -1) / mass) / 30;
+		}
 		return min(-force - resistance, -10000) / mass;
 	}
 }

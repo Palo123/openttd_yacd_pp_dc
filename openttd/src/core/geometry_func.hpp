@@ -13,7 +13,26 @@
 #define GEOMETRY_FUNC_HPP
 
 #include "geometry_type.hpp"
+#include "math_func.hpp"
+#include "../direction_func.h"
 
 Dimension maxdim(const Dimension &d1, const Dimension &d2);
+
+/**
+ * Transform a given Dimension.
+ *
+ * The width and the height will be swapped or will stay unchanged based on used transformation.
+ *
+ * @param dim The Dimension to transform.
+ * @param transformation Transformation to perform.
+ * @return The transformed Dimension.
+ */
+static inline Dimension TransformDimension(Dimension dim, DirTransformation transformation)
+{
+	if (TransformAxis(AXIS_X, transformation) != AXIS_X) Swap(dim.width, dim.height);
+	return dim;
+}
+
+Point TransformPoint(Point point, DirTransformation transformation);
 
 #endif /* GEOMETRY_FUNC_HPP */

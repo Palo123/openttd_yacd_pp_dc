@@ -323,6 +323,7 @@ void AddArticulatedParts(Vehicle *first)
 	Vehicle *v = first;
 	for (uint i = 1; i < MAX_ARTICULATED_PARTS; i++) {
 		bool flip_image;
+		EngineID eid = GetNextArticulatedPart(i, first->engine_type);
 		EngineID engine_type = GetNextArticulatedPart(i, first->engine_type, first, &flip_image);
 		if (engine_type == INVALID_ENGINE) return;
 

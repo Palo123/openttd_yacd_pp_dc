@@ -15,12 +15,27 @@
 #include "map_func.h"
 
 /**
+ * Maximum height of bridge above ground.
+ * Used when building bridges and terraforming below bridges.
+ * Background: Before the more heightlevels patch, only bridges below height 15
+ * were possible, simply because the landscape wasn´t higher.  With more
+ * heightlevels enabled, one can think about higher bridges in terms of landscape.
+ * Unfortunately, if a bridge becomes higher than height 15, one will see serious
+ * glitches.  Fixing them would be a fairly hard problem.  So, also as even more
+ * high bridges are fairly unrealistic either and this is no restriction compared
+ * to the situation before more heightlevels, the height of bridges is limited
+ * to height 15.
+ */
+static const int MAX_BRIDGE_HEIGHT = 15;
+
+/**
  * Calculates the length of a tunnel or a bridge (without end tiles)
  * @param begin The begin of the tunnel or bridge.
  * @param end   The end of the tunnel or bridge.
  * @return length of bridge/tunnel middle
  */
-static inline uint GetTunnelBridgeLength(TileIndex begin, TileIndex end)
+template <bool Tgeneric>
+static inline uint GetTunnelBridgeLength(typename TileIndexT<Tgeneric>::T begin, typename TileIndexT<Tgeneric>::T end)
 {
 	int x1 = TileX(begin);
 	int y1 = TileY(begin);
@@ -29,6 +44,10 @@ static inline uint GetTunnelBridgeLength(TileIndex begin, TileIndex end)
 
 	return abs(x2 + y2 - x1 - y1) - 1;
 }
+/** @copydoc GetTunnelBridgeLength(TileIndexT<Tgeneric>::T,TileIndexT<Tgeneric>::T) */
+static inline uint GetTunnelBridgeLength(TileIndex begin, TileIndex end) { return GetTunnelBridgeLength<false>(begin, end); }
+/** @copydoc GetTunnelBridgeLength(TileIndexT<Tgeneric>::T,TileIndexT<Tgeneric>::T) */
+static inline uint GetTunnelBridgeLength(GenericTileIndex begin, GenericTileIndex end) { return GetTunnelBridgeLength<true>(begin, end); }
 
 extern TileIndex _build_tunnel_endtile;
 

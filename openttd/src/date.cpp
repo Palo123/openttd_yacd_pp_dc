@@ -19,12 +19,14 @@
 #include "vehicle_base.h"
 #include "rail_gui.h"
 #include "saveload/saveload.h"
+#include "cargodest_func.h"
 
 Year      _cur_year;   ///< Current year, starting at 0
 Month     _cur_month;  ///< Current month (0..11)
 Date      _date;       ///< Current date in days (day counter)
 DateFract _date_fract; ///< Fractional part of the day.
 uint16 _tick_counter;  ///< Ever incrementing (and sometimes wrapping) tick counter for setting off various events
+uint8 _tick_skip_counter;
 
 /**
  * Set the date.
@@ -154,6 +156,15 @@ Date ConvertYMDToDate(Year year, Month month, Day day)
 	return DAYS_TILL(year) + days;
 }
 
+/**
+ * Converts the current day counter and date fraction into an absolute tick value.
+ * @returns current time as ticks
+ */
+Ticks GetCurrentTickCount()
+{
+	return _date * DAY_TICKS_DAY_LENGTH + _date_fract;
+}
+
 /** Functions used by the IncreaseDate function */
 
 extern void EnginesDailyLoop();
@@ -238,6 +249,7 @@ static void OnNewMonth()
 	IndustryMonthlyLoop();
 	SubsidyMonthlyLoop();
 	StationMonthlyLoop();
+	UpdateCargoLinks();
 #ifdef ENABLE_NETWORK
 	if (_network_server) NetworkServerMonthlyLoop();
 #endif /* ENABLE_NETWORK */
@@ -256,7 +268,7 @@ static void OnNewDay()
 	IndustryDailyLoop();
 
 	SetWindowWidgetDirty(WC_STATUS_BAR, 0, 0);
-	EnginesDailyLoop();
+	if (_date_fract % DAY_TICKS == 0) EnginesDailyLoop();
 
 	/* Refresh after possible snowline change */
 	SetWindowClassesDirty(WC_TOWN_VIEW);
@@ -274,7 +286,7 @@ void IncreaseDate()
 	if (_game_mode == GM_MENU) return;
 
 	_date_fract++;
-	if (_date_fract < DAY_TICKS) return;
+	if (_date_fract < DAY_TICKS_DAY_LENGTH)  return;
 	_date_fract = 0;
 
 	/* increase day counter */

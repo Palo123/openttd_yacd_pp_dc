@@ -98,6 +98,18 @@ static inline T abs(const T a)
 }
 
 /**
+ * Returns the sign of a value.
+ *
+ * @param x The value
+ * @return -1 if the x is negative, +1 if positive, 0 otherwise
+ */
+template <typename T>
+static inline int sgn(const T x)
+{
+	return (int)(x > (T)0) - (int)(x < (T)0);
+}
+
+/**
  * Return the smallest multiple of n equal or greater than x
  *
  * @note n must be a power of 2

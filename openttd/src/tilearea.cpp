@@ -11,6 +11,7 @@
 
 #include "stdafx.h"
 
+#include "core/geometry_func.hpp"
 #include "tilearea_type.h"
 
 /**
@@ -18,8 +19,11 @@
  * @param start the start of the area
  * @param end   the end of the area
  */
-TileArea::TileArea(TileIndex start, TileIndex end)
+template <bool Tgeneric>
+TileAreaT<Tgeneric>::TileAreaT(TileIndexType start, TileIndexType end)
 {
+	assert(IsSameMap(start, end));
+
 	uint sx = TileX(start);
 	uint sy = TileY(start);
 	uint ex = TileX(end);
@@ -28,7 +32,7 @@ TileArea::TileArea(TileIndex start, TileIndex end)
 	if (sx > ex) Swap(sx, ex);
 	if (sy > ey) Swap(sy, ey);
 
-	this->tile = TileXY(sx, sy);
+	this->tile = TileXY<Tgeneric>(sx, sy, MapOf(start));
 	this->w    = ex - sx + 1;
 	this->h    = ey - sy + 1;
 }
@@ -37,9 +41,10 @@ TileArea::TileArea(TileIndex start, TileIndex end)
  * Add a single tile to a tile area; enlarge if needed.
  * @param to_add The tile to add
  */
-void TileArea::Add(TileIndex to_add)
+template <bool Tgeneric>
+void TileAreaT<Tgeneric>::Add(TileIndexType to_add)
 {
-	if (this->tile == INVALID_TILE) {
+	if (!IsValidTileIndex(this->tile)) {
 		this->tile = to_add;
 		this->w = 1;
 		this->h = 1;
@@ -59,7 +64,7 @@ void TileArea::Add(TileIndex to_add)
 	ex = max(ax, ex);
 	ey = max(ay, ey);
 
-	this->tile = TileXY(sx, sy);
+	this->tile = TileXY<Tgeneric>(sx, sy, MapOf(to_add));
 	this->w    = ex - sx + 1;
 	this->h    = ey - sy + 1;
 }
@@ -69,11 +74,13 @@ void TileArea::Add(TileIndex to_add)
  * @param ta the other tile area to check against.
  * @return true if they intersect.
  */
-bool TileArea::Intersects(const TileArea &ta) const
+template <bool Tgeneric>
+bool TileAreaT<Tgeneric>::Intersects(const TileAreaT<Tgeneric> &ta) const
 {
 	if (ta.w == 0 || this->w == 0) return false;
 
 	assert(ta.w != 0 && ta.h != 0 && this->w != 0 && this->h != 0);
+	assert(IsSameMap(this->tile, ta.tile));
 
 	uint left1   = TileX(this->tile);
 	uint top1    = TileY(this->tile);
@@ -94,15 +101,47 @@ bool TileArea::Intersects(const TileArea &ta) const
 }
 
 /**
+ * Does this tile area contains another?
+ * @param ta the other tile area to check against.
+ * @return true if the other area is fully contained.
+ */
+template <bool Tgeneric>
+bool TileAreaT<Tgeneric>::Contains(const TileAreaT<Tgeneric> &ta) const
+{
+	if (ta.w == 0 || this->w == 0) return false;
+
+	assert(ta.w != 0 && ta.h != 0 && this->w != 0 && this->h != 0);
+	assert(IsSameMap(this->tile, ta.tile));
+
+	uint left1   = TileX(this->tile);
+	uint top1    = TileY(this->tile);
+	uint right1  = left1 + this->w - 1;
+	uint bottom1 = top1  + this->h - 1;
+
+	uint left2   = TileX(ta.tile);
+	uint top2    = TileY(ta.tile);
+	uint right2  = left2 + ta.w - 1;
+	uint bottom2 = top2  + ta.h - 1;
+
+	return
+			left2   >= left1  &&
+			right2  <= right1 &&
+			top2    >= top1   &&
+			bottom2 <= bottom1;
+}
+
+/**
  * Does this tile area contain a tile?
  * @param tile Tile to test for.
  * @return True if the tile is inside the area.
  */
-bool TileArea::Contains(TileIndex tile) const
+template <bool Tgeneric>
+bool TileAreaT<Tgeneric>::Contains(TileIndexType tile) const
 {
 	if (this->w == 0) return false;
 
 	assert(this->w != 0 && this->h != 0);
+	assert(IsSameMap(this->tile, tile));
 
 	uint left   = TileX(this->tile);
 	uint top    = TileY(this->tile);
@@ -115,25 +154,81 @@ bool TileArea::Contains(TileIndex tile) const
 /**
  * Clamp the tile area to map borders.
  */
-void TileArea::ClampToMap()
+template <bool Tgeneric>
+void TileAreaT<Tgeneric>::ClampToMap()
 {
-	assert(this->tile < MapSize());
-	this->w = min(this->w, MapSizeX() - TileX(this->tile));
-	this->h = min(this->h, MapSizeY() - TileY(this->tile));
+	assert(IsValidTileIndex(this->tile));
+	this->w = min(this->w, MapSizeX(MapOf(this->tile)) - TileX(this->tile));
+	this->h = min(this->h, MapSizeY(MapOf(this->tile)) - TileY(this->tile));
 }
 
 /**
- * Construct the iterator.
- * @param corner1 Tile from where to begin iterating.
- * @param corner2 Tile where to end the iterating.
+ * Get coordinates of transformed nothern tile of this area relative to the
+ * northern tile of transformed area.
+ *
+ * When transforming this area into another, the northern tile becomes some other
+ * tile in the transformed area. The function returns coordinates of this other tile
+ * relative to the transformed area.
+ *
+ * Note that calculation are independent from desired position of the transformed area.
+ *
+ * @param transformation transformation to perform
+ * @return the distance
  */
-DiagonalTileIterator::DiagonalTileIterator(TileIndex corner1, TileIndex corner2) : TileIterator(corner2), base_x(TileX(corner2)), base_y(TileY(corner2)), a_cur(0), b_cur(0)
+template <bool Tgeneric>
+TileIndexDiffC TileAreaT<Tgeneric>::TransformedNorthOffset(DirTransformation transformation) const
 {
-	assert(corner1 < MapSize());
-	assert(corner2 < MapSize());
+	Dimension distance = { this->w - 1, this->h - 1 };
+	distance = TransformDimension(distance, transformation);
+	TileIndexDiffC ret = TransformedNorthCornerDiffC(transformation);
+	ret.x *= distance.width;
+	ret.y *= distance.height;
+	return ret;
+}
 
-	int dist_x = TileX(corner1) - TileX(corner2);
-	int dist_y = TileY(corner1) - TileY(corner2);
+/**
+ * Get coordinates of a transformed tile of this area relative to the transformed
+ * northern tile of this area.
+ *
+ * The function takes x/y coordinates of a tile relative to this area and performs
+ * a transformation on them.
+ *
+ * Note that calculation are independent from desired position of the transformed area.
+ *
+ * @param tile the tile to transform
+ * @param transformation transformation to perform
+ * @return the distance
+ */
+template <bool Tgeneric>
+TileIndexDiffC TileAreaT<Tgeneric>::TransformedTileOffset(typename TileAreaT<Tgeneric>::TileIndexType tile, DirTransformation transformation) const
+{
+	assert(IsSameMap(this->tile, tile));
+
+	/* calculate coordinates of the tile relative to the northern tile of the area */
+	Point coords = { TileX(tile) - TileX(this->tile), TileY(tile) - TileY(this->tile) };
+	/* transform coordinates, now they will be relative to the transformed northern tile of the area */
+	coords = TransformPoint(coords, transformation);
+	TileIndexDiffC ret = { (uint16)coords.x, (uint16)coords.y };
+	return ret;
+}
+
+/**
+ * Initialize iteration.
+ * @param my_index Pointer to the tile index of the iterator. The index must be set to the first corner of the iteration before you call Init.
+ * @param opposite_corner Second (opposite) corner of the iteration.
+ * @param my_map The map that iterator iterates through.
+ */
+void DiagonalTileIteratorController::Init(RawTileIndex *my_index, RawTileIndex opposite_corner, Map *my_map)
+{
+	assert(IsValidTileIndex(GenericTileIndex(*my_index, my_map)));
+	assert(IsValidTileIndex(GenericTileIndex(opposite_corner, my_map)));
+
+	this->base_x = TileX(GenericTileIndex(*my_index, my_map));
+	this->base_y = TileY(GenericTileIndex(*my_index, my_map));
+	this->a_cur = 0;
+	this->b_cur = 0;
+	int dist_x = TileX(GenericTileIndex(opposite_corner, my_map)) - this->base_x;
+	int dist_y = TileY(GenericTileIndex(opposite_corner, my_map)) - this->base_y;
 	this->a_max = dist_x + dist_y;
 	this->b_max = dist_y - dist_x;
 
@@ -159,11 +254,13 @@ DiagonalTileIterator::DiagonalTileIterator(TileIndex corner1, TileIndex corner2)
 }
 
 /**
- * Move ourselves to the next tile in the rectangle on the map.
+ * Perform single iteration step.
+ * @param my_index Pointer to the tile index of the iterator.
+ * @param my_map The map that iterator iterates through.
  */
-TileIterator &DiagonalTileIterator::operator++()
+void DiagonalTileIteratorController::Advance(RawTileIndex *my_index, Map *my_map)
 {
-	assert(this->tile != INVALID_TILE);
+	assert(*my_index != INVALID_TILE_INDEX);
 
 	/* Determine the next tile, while clipping at map borders */
 	bool new_line = false;
@@ -204,9 +301,53 @@ TileIterator &DiagonalTileIterator::operator++()
 		uint x = this->base_x + (this->a_cur - this->b_cur) / 2;
 		uint y = this->base_y + (this->b_cur + this->a_cur) / 2;
 		/* Prevent wrapping around the map's borders. */
-		this->tile = x >= MapSizeX() || y >= MapSizeY() ? INVALID_TILE : TileXY(x, y);
-	} while (this->tile > MapSize() && this->b_max != this->b_cur);
+		*my_index = x >= MapSizeX(my_map) || y >= MapSizeY(my_map) ? INVALID_TILE_INDEX : TileXY<true>(x, y, my_map).index;
+	} while (!IsValidTileIndex(GenericTileIndex(*my_index, my_map)) && this->b_max != this->b_cur);
 
-	if (this->b_max == this->b_cur) this->tile = INVALID_TILE;
-	return *this;
+	if (this->b_max == this->b_cur) *my_index = INVALID_TILE_INDEX;
 }
+
+/**
+ * Initialize iteration.
+ * @param src_index Pointer to the source tile index of the iterator. The index must be set to the northern tile of the source area before you call Init.
+ * @param dst_index Pointer to the destination tile index of the iterator. The index must be set to the transformed northern tile of the source area before you call Init.
+ * @param src_w The width of the source area.
+ * @param src_h The height of the source area.
+ * @param transformation Transformation to perform.
+ */
+void TransformationTileIteratorController::Init(RawTileIndex *src_index, RawTileIndex *dst_index, uint16 src_w, uint16 src_h, DirTransformation transformation)
+{
+	assert((*src_index != INVALID_TILE_INDEX) == (*dst_index != INVALID_TILE_INDEX));
+
+	this->OrthogonalTileIteratorController::Init(src_index, src_w, src_h);
+	this->transformation = transformation;
+}
+
+/**
+ * Perform single iteration step.
+ * @param src_index Pointer to the source tile index of the iterator.
+ * @param src_map The source map that iterator iterates through.
+ * @param dst_index Pointer to the destination tile index of the iterator.
+ * @param dst_map The destination map that iterator iterates through.
+ */
+void TransformationTileIteratorController::Advance(RawTileIndex *src_index, Map *src_map, RawTileIndex *dst_index, Map *dst_map)
+{
+	assert(*src_index != INVALID_TILE_INDEX);
+
+	if (--this->x > 0) {
+		++*src_index;
+		*dst_index += ToTileIndexDiff<true>(TileIndexDiffCByDiagDir(TransformDiagDir(DIAGDIR_SW, this->transformation)), dst_map);
+	} else if (--this->y > 0) {
+		this->x = this->w;
+		*src_index += TileDiffXY(1, 1, src_map) - this->w;
+		*dst_index -= ToTileIndexDiff<true>(TileIndexDiffCByDiagDir(TransformDiagDir(DIAGDIR_SW, this->transformation)), dst_map) * (this->w - 1);
+		*dst_index += ToTileIndexDiff<true>(TileIndexDiffCByDiagDir(TransformDiagDir(DIAGDIR_SE, this->transformation)), dst_map);
+	} else {
+		*src_index = INVALID_TILE_INDEX;
+		*dst_index = INVALID_TILE_INDEX;
+	}
+}
+
+/* instantiate */
+template struct TileAreaT<false>;
+template struct TileAreaT<true>;

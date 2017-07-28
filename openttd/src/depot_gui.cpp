@@ -26,6 +26,8 @@
 #include "tilehighlight_func.h"
 #include "window_gui.h"
 #include "vehiclelist.h"
+#include "company_base.h"
+#include "infrastructure_func.h"
 #include "order_backup.h"
 #include "zoom_func.h"
 
@@ -677,7 +679,7 @@ struct DepotWindow : Window {
 
 		/* Setup disabled buttons. */
 		TileIndex tile = this->window_number;
-		this->SetWidgetsDisabledState(!IsTileOwner(tile, _local_company),
+		this->SetWidgetsDisabledState(!Company::IsValidID(_local_company) || !IsInfraTileUsageAllowed(this->type, _local_company, tile),
 			WID_D_STOP_ALL,
 			WID_D_START_ALL,
 			WID_D_SELL,
@@ -862,6 +864,7 @@ struct DepotWindow : Window {
 
 	virtual void OnMouseDrag(Point pt, int widget)
 	{
+
 		if (this->type != VEH_TRAIN || this->sel == INVALID_VEHICLE) return;
 
 		/* A rail vehicle is dragged.. */
@@ -916,6 +919,7 @@ struct DepotWindow : Window {
 
 					if (this->GetVehicleFromDepotWndPt(pt.x - nwi->pos_x, pt.y - nwi->pos_y, &v, &gdvp) == MODE_DRAG_VEHICLE && sel != INVALID_VEHICLE) {
 						if (gdvp.wagon != NULL && gdvp.wagon->index == sel && _ctrl_pressed) {
+
 							DoCommandP(Vehicle::Get(sel)->tile, Vehicle::Get(sel)->index, true,
 									CMD_REVERSE_TRAIN_DIRECTION | CMD_MSG(STR_ERROR_CAN_T_REVERSE_DIRECTION_RAIL_VEHICLE));
 						} else if (gdvp.wagon == NULL || gdvp.wagon->index != sel) {

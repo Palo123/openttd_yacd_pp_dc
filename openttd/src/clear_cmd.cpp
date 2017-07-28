@@ -124,6 +124,7 @@ static void DrawTile_Clear(TileInfo *ti)
 			break;
 	}
 
+	DrawOverlay(ti, MP_CLEAR);
 	DrawBridgeMiddle(ti);
 }
 
@@ -183,11 +184,24 @@ static void TileLoopClearAlps(TileIndex tile)
 		if (!IsSnowTile(tile)) return;
 	} else {
 		/* At or above the snow line, make snow tile if needed. */
-		if (!IsSnowTile(tile)) {
-			MakeSnow(tile);
-			MarkTileDirtyByTile(tile);
-			return;
-		}
+		switch (_settings_game.game_creation.landscape) {
+		case LT_ARCTIC:
+			if (!IsSnowTile(tile)) {
+				MakeSnow(tile);
+				MarkTileDirtyByTile(tile);
+				return;
+			}
+			break;
+		case LT_TEMPERATE:
+			if (_settings_game.construction.snow_in_temperate) {
+				if (!IsSnowTile(tile)) {
+					MakeSnow(tile);
+					MarkTileDirtyByTile(tile);
+					return;
+				}
+			}
+			break;
+		};
 	}
 	/* Update snow density. */
 	uint current_density = GetClearDensity(tile);
@@ -261,6 +275,7 @@ static void TileLoop_Clear(TileIndex tile)
 	switch (_settings_game.game_creation.landscape) {
 		case LT_TROPIC: TileLoopClearDesert(tile); break;
 		case LT_ARCTIC: TileLoopClearAlps(tile);   break;
+		case LT_TEMPERATE: TileLoopClearAlps(tile); break;
 	}
 
 	switch (GetClearGround(tile)) {
@@ -398,4 +413,5 @@ extern const TileTypeProcs _tile_type_clear_procs = {
 	NULL,                     ///< vehicle_enter_tile_proc
 	GetFoundation_Clear,      ///< get_foundation_proc
 	TerraformTile_Clear,      ///< terraform_tile_proc
+	NULL,                     ///< copypaste_tile_proc
 };

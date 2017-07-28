@@ -39,13 +39,16 @@
 #include "subsidy_func.h"
 #include "station_base.h"
 #include "waypoint_base.h"
+#include "triphistory.h"
 #include "economy_base.h"
 #include "core/pool_func.hpp"
 #include "core/backup_type.hpp"
+#include "infrastructure_func.h"
 #include "water.h"
 #include "game/game.hpp"
 #include "cargomonitor.h"
 #include "goal_base.h"
+#include "cargodest_func.h"
 
 #include "table/strings.h"
 #include "table/pricebase.h"
@@ -76,7 +79,8 @@ typedef SmallVector<Industry *, 16> SmallIndustryList;
 /**
  * Score info, values used for computing the detailed performance rating.
  */
-const ScoreInfo _score_info[] = {
+//const ScoreInfo _score_info[] = {
+ScoreInfo _score_info[] = {
 	{     120, 100}, // SCORE_VEHICLES
 	{      80, 100}, // SCORE_STATIONS
 	{   10000, 100}, // SCORE_MIN_PROFIT
@@ -419,7 +423,8 @@ void ChangeOwnershipOfCompanyItems(Owner old_owner, Owner new_owner)
 		}
 	}
 
-	{
+	/* Change ownership of vehicles */
+	if (new_owner != INVALID_OWNER) {
 		FreeUnitIDGenerator unitidgen[] = {
 			FreeUnitIDGenerator(VEH_TRAIN, new_owner), FreeUnitIDGenerator(VEH_ROAD,     new_owner),
 			FreeUnitIDGenerator(VEH_SHIP,  new_owner), FreeUnitIDGenerator(VEH_AIRCRAFT, new_owner)
@@ -450,8 +455,12 @@ void ChangeOwnershipOfCompanyItems(Owner old_owner, Owner new_owner)
 		}
 
 		if (new_owner != INVALID_OWNER) GroupStatistics::UpdateAutoreplace(new_owner);
+	} else {
+	/* Depending on sharing settings, other companies could be affected too.
+	 * Let the infrastructure sharing code handle this. */
+	HandleSharingCompanyDeletion(old_owner);
 	}
-
+	
 	/*  Change ownership of tiles */
 	{
 		TileIndex tile = 0;
@@ -464,22 +473,14 @@ void ChangeOwnershipOfCompanyItems(Owner old_owner, Owner new_owner)
 			 * and signals were not propagated
 			 * Similar with crossings - it is needed to bar crossings that weren't before
 			 * because of different owner of crossing and approaching train */
-			tile = 0;
 
-			do {
-				if (IsTileType(tile, MP_RAILWAY) && IsTileOwner(tile, new_owner) && HasSignals(tile)) {
-					TrackBits tracks = GetTrackBits(tile);
-					do { // there may be two tracks with signals for TRACK_BIT_HORZ and TRACK_BIT_VERT
-						Track track = RemoveFirstTrack(&tracks);
-						if (HasSignalOnTrack(tile, track)) AddTrackToSignalBuffer(tile, track, new_owner);
-					} while (tracks != TRACK_BIT_NONE);
-				} else if (IsLevelCrossingTile(tile) && IsTileOwner(tile, new_owner)) {
-					UpdateLevelCrossing(tile);
+			UpdateAllBlockSignals(new_owner);
+		} else if (_settings_game.economy.infrastructure_sharing[VEH_TRAIN]) {
+			/* tracks are being removed while sharing is enabled.
+			 * Thus, update all signals and crossings. */
+			UpdateAllBlockSignals();
 				}
-			} while (++tile != MapSize());
-		}
-
-		/* update signals in buffer */
+		/* Update any signals in the buffer */
 		UpdateSignalsInBuffer();
 	}
 
@@ -493,6 +494,13 @@ void ChangeOwnershipOfCompanyItems(Owner old_owner, Owner new_owner)
 			/* if a company goes bankrupt, set owner to OWNER_NONE so the sign doesn't disappear immediately
 			 * also, drawing station window would cause reading invalid company's colour */
 			st->owner = new_owner == INVALID_OWNER ? OWNER_NONE : new_owner;
+
+			/* Move route links to the new company. */
+			for (CargoID cid = 0; cid < NUM_CARGO; cid++) {
+				for (RouteLinkList::iterator itr = st->goods[cid].routes.begin(); itr != st->goods[cid].routes.end(); ++itr) {
+					if ((*itr)->owner == old_owner) (*itr)->owner = new_owner;
+				}
+			}
 		}
 	}
 
@@ -610,6 +618,30 @@ static void CompanyCheckBankrupt(Company *c)
 	}
 }
 
+/* Change some needed values to reflect day length. */
+bool InitializeGraphPerformance(int32 p1)
+{
+       _score_info[SCORE_MIN_PROFIT].needed = SCORE_MIN_PROFIT_NEEDED;
+       _score_info[SCORE_MIN_INCOME].needed = SCORE_MIN_INCOME_NEEDED;
+       _score_info[SCORE_MAX_INCOME].needed = SCORE_MAX_INCOME_NEEDED;
+       _score_info[SCORE_MONEY].needed = SCORE_MONEY_NEEDED;
+
+       if (_settings_game.economy.day_length_balance_type != DBT_PAYMENTS) {
+               _score_info[SCORE_MIN_PROFIT].needed *= _settings_game.economy.day_length_factor;
+               _score_info[SCORE_MIN_INCOME].needed *= _settings_game.economy.day_length_factor;
+               _score_info[SCORE_MAX_INCOME].needed *= _settings_game.economy.day_length_factor;
+               _score_info[SCORE_MONEY].needed *= _settings_game.economy.day_length_factor;
+       }
+
+       _score_info[SCORE_DELIVERED].needed = SCORE_DELIVERED_NEEDED * _settings_game.economy.day_length_factor;
+
+       SetWindowDirty(WC_PERFORMANCE_DETAIL, 0);
+       SetWindowDirty(WC_PERFORMANCE_HISTORY, 0);
+
+       return true;
+}
+
+
 /**
  * Update the finances of all companies.
  * Pay for the stations, update the history graph, update ratings and company values, and deal with bankruptcy.
@@ -654,6 +686,25 @@ static void CompaniesGenStatistics()
 	FOR_ALL_COMPANIES(c) {
 		CompanyCheckBankrupt(c);
 	}
+
+       FOR_ALL_COMPANIES(c) {
+               _current_company = c->index;
+
+               if (c->inaugurated_year + 2 > _cur_year) continue;
+
+               CommandCost cost(EXPENSES_OTHER, 0);
+
+               if (c->old_economy[0].company_value > 1500000) {
+                       cost.AddCost(c->old_economy[0].company_value >> 6); //~20% company value tax per year
+               }else if (c->old_economy[0].company_value > 200000 ) {
+                       cost.AddCost(c->old_economy[0].company_value >> 7); //~10% company value tax per year
+               }
+
+               if ( (cost.GetCost() > 0) && ( _settings_game.economy.yearly_tax )) {
+                       _economy.industry_helper += cost.GetCost();
+                       SubtractMoneyFromCompany(cost);
+               }
+       }
 
 	/* Only run the economic statics and update company stats every 3rd month (1st of quarter). */
 	if (!HasBit(1 << 0 | 1 << 3 | 1 << 6 | 1 << 9, _cur_month)) return;
@@ -791,6 +842,7 @@ void RecomputePrices()
 static void CompaniesPayInterest()
 {
 	const Company *c;
+	CommandCost cost;
 
 	Backup<CompanyByte> cur_company(_current_company, FILE_LINE);
 	FOR_ALL_COMPANIES(c) {
@@ -816,7 +868,15 @@ static void CompaniesPayInterest()
 
 		SubtractMoneyFromCompany(CommandCost(EXPENSES_LOAN_INT, up_to_this_month - up_to_previous_month));
 
-		SubtractMoneyFromCompany(CommandCost(EXPENSES_OTHER, _price[PR_STATION_VALUE] >> 2));
+		cost = CommandCost(EXPENSES_OTHER, _price[PR_STATION_VALUE] >> 2);
+		/* Multiply property according to day length balance type. */
+		if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+			(_settings_game.economy.day_length_balance_type == DBT_RUN_COST &&
+			_settings_game.economy.include_prop_main_to_run))
+		{
+			cost.AffectCost( _settings_game.economy.day_length_balance_factor );
+		}
+		SubtractMoneyFromCompany(cost);
 	}
 	cur_company.Restore();
 }
@@ -985,6 +1045,33 @@ Money GetTransportedGoodsIncome(uint num_pieces, uint dist, byte transit_days, C
 /** The industries we've currently brought cargo to. */
 static SmallIndustryList _cargo_delivery_destinations;
 
+ /**
+ * Deliver goods to an industry. Cargo acceptance by the industry is checked.
+ * @param ind The industry to deliver to.
+ * @param cargo_type Type of cargo delivered.
+ * @param num_pieces Amount of cargo delivered.
+ * @return Accepted pieces of cargo.
+ */
+static uint DeliverGoodsToIndustry(Industry *ind, CargoID cargo_type, uint num_pieces)
+{
+	uint cargo_index;
+	for (cargo_index = 0; cargo_index < lengthof(ind->accepts_cargo); cargo_index++) {
+		if (cargo_type == ind->accepts_cargo[cargo_index]) break;
+	}
+	/* Check if matching cargo has been found */
+	if (cargo_index >= lengthof(ind->accepts_cargo)) return 0;
+
+	/* Check if industry temporarily refuses acceptance */
+	if (IndustryTemporarilyRefusesCargo(ind, cargo_type)) return 0;
+
+	/* Insert the industry into _cargo_delivery_destinations, if not yet contained */
+	_cargo_delivery_destinations.Include(ind);
+
+	uint amount = min(num_pieces, 0xFFFFU - ind->incoming_cargo_waiting[cargo_index]);
+	ind->incoming_cargo_waiting[cargo_index] += amount;
+	return amount;
+}
+
 /**
  * Transfer goods from station to industry.
  * All cargo is delivered to the nearest (Manhattan) industry to the station sign, which is inside the acceptance rectangle and actually accepts the cargo.
@@ -1009,21 +1096,7 @@ static uint DeliverGoodsToIndustry(const Station *st, CargoID cargo_type, uint n
 		Industry *ind = st->industries_near[i];
 		if (ind->index == source) continue;
 
-		uint cargo_index;
-		for (cargo_index = 0; cargo_index < lengthof(ind->accepts_cargo); cargo_index++) {
-			if (cargo_type == ind->accepts_cargo[cargo_index]) break;
-		}
-		/* Check if matching cargo has been found */
-		if (cargo_index >= lengthof(ind->accepts_cargo)) continue;
-
-		/* Check if industry temporarily refuses acceptance */
-		if (IndustryTemporarilyRefusesCargo(ind, cargo_type)) continue;
-
-		/* Insert the industry into _cargo_delivery_destinations, if not yet contained */
-		_cargo_delivery_destinations.Include(ind);
-
-		uint amount = min(num_pieces, 0xFFFFU - ind->incoming_cargo_waiting[cargo_index]);
-		ind->incoming_cargo_waiting[cargo_index] += amount;
+		uint amount = DeliverGoodsToIndustry(ind, cargo_type, num_pieces);
 		num_pieces -= amount;
 		accepted += amount;
 	}
@@ -1041,17 +1114,25 @@ static uint DeliverGoodsToIndustry(const Station *st, CargoID cargo_type, uint n
  * @param company The company delivering the cargo
  * @param src_type Type of source of cargo (industry, town, headquarters)
  * @param src Index of source of cargo
+ * @param cp_dest_type Type of destination of cargo
+ * @param cp_dest Index of the destination of cargo
  * @return Revenue for delivering cargo
  * @note The cargo is just added to the stockpile of the industry. It is due to the caller to trigger the industry's production machinery
  */
-static Money DeliverGoods(int num_pieces, CargoID cargo_type, StationID dest, TileIndex source_tile, byte days_in_transit, Company *company, SourceType src_type, SourceID src)
+static Money DeliverGoods(int num_pieces, CargoID cargo_type, StationID dest, TileIndex source_tile, byte days_in_transit, Company *company, SourceType src_type, SourceID src, SourceType cp_dest_type, SourceID cp_dest)
 {
 	assert(num_pieces > 0);
 
 	Station *st = Station::Get(dest);
 
-	/* Give the goods to the industry. */
-	uint accepted = DeliverGoodsToIndustry(st, cargo_type, num_pieces, src_type == ST_INDUSTRY ? src : INVALID_INDUSTRY);
+	uint accepted = 0;
+	if (cp_dest != INVALID_SOURCE) {
+		/* If this cargo has an industry as destination, deliver the cargo to it. */
+		if (cp_dest_type == ST_INDUSTRY) accepted = DeliverGoodsToIndustry(Industry::Get(cp_dest), cargo_type, num_pieces);
+	} else {
+		/* Give the goods to any accepting industry. */
+		accepted = DeliverGoodsToIndustry(st, cargo_type, num_pieces, src_type == ST_INDUSTRY ? src : INVALID_INDUSTRY);
+	}
 
 	/* If this cargo type is always accepted, accept all */
 	if (HasBit(st->always_accepted, cargo_type)) accepted = num_pieces;
@@ -1140,23 +1221,39 @@ CargoPayment::~CargoPayment()
 
 	this->front->cargo_payment = NULL;
 
-	if (this->visual_profit == 0) return;
+	if (this->visual_profit == 0 && this->transfer_profit == 0) return;
 
 	Backup<CompanyByte> cur_company(_current_company, this->front->owner, FILE_LINE);
 
-	SubtractMoneyFromCompany(CommandCost(this->front->GetExpenseType(true), -this->route_profit));
-	this->front->profit_this_year += this->visual_profit << 8;
-
-	if (this->route_profit != 0) {
-		if (IsLocalCompany() && !PlayVehicleSound(this->front, VSE_LOAD_UNLOAD)) {
-			SndPlayVehicleFx(SND_14_CASHTILL, this->front);
-		}
-
-		ShowCostOrIncomeAnimation(this->front->x_pos, this->front->y_pos, this->front->z_pos, -this->visual_profit);
-	} else {
-		ShowFeederIncomeAnimation(this->front->x_pos, this->front->y_pos, this->front->z_pos, this->visual_profit);
+	/* Divide income according to day length balance type. */
+	if (_settings_game.economy.day_length_balance_type == DBT_PAYMENTS) {
+		this->route_profit /= _settings_game.economy.day_length_balance_factor;
+		this->visual_profit /= _settings_game.economy.day_length_balance_factor;
 	}
 
+	SubtractMoneyFromCompany(CommandCost(this->front->GetExpenseType(true), -this->route_profit));
+	this->front->profit_this_year += (this->visual_profit + this->transfer_profit) << 8;
+
+	int z = this->front->z_pos;
+
+	if (this->route_profit != 0) {
+		/* Show profit/loss from final delivery. */
+		ShowCostOrIncomeAnimation(this->front->x_pos, this->front->y_pos, z, -this->visual_profit);
+		z += VPSM_TOP + FONT_HEIGHT_NORMAL + VPSM_BOTTOM;
+	}
+
+	if (this->transfer_profit != 0) {
+		/* Show transfer credits. */
+		ShowFeederIncomeAnimation(this->front->x_pos, this->front->y_pos, z, this->transfer_profit);
+	}
+
+	/* Play cash sound. */
+	if ( (IsLocalCompany() && !PlayVehicleSound(this->front, VSE_LOAD_UNLOAD)) && ( _settings_client.sound.cashtill ) ) {
+		SndPlayVehicleFx(SND_14_CASHTILL, this->front);
+	}
+
+	this->front->trip_history.AddValue(this->route_profit, _date);
+	InvalidateWindowData(WC_VEHICLE_TRIP_HISTORY, this->front->index);
 	cur_company.Restore();
 }
 
@@ -1172,7 +1269,7 @@ void CargoPayment::PayFinalDelivery(const CargoPacket *cp, uint count)
 	}
 
 	/* Handle end of route payment */
-	Money profit = DeliverGoods(count, this->ct, this->current_station, cp->SourceStationXY(), cp->DaysInTransit(), this->owner, cp->SourceSubsidyType(), cp->SourceSubsidyID());
+	Money profit = DeliverGoods(count, this->ct, this->current_station, cp->SourceStationXY(), cp->DaysInTransit(), this->owner, cp->SourceSubsidyType(), cp->SourceSubsidyID(), cp->DestinationType(), cp->DestinationID());
 	this->route_profit += profit;
 
 	/* The vehicle's profit is whatever route profit there is minus feeder shares. */
@@ -1196,7 +1293,7 @@ Money CargoPayment::PayTransfer(const CargoPacket *cp, uint count)
 
 	profit = profit * _settings_game.economy.feeder_payment_share / 100;
 
-	this->visual_profit += profit; // accumulate transfer profits for whole vehicle
+	this->transfer_profit += profit; // accumulate transfer profits for whole vehicle
 	return profit; // account for the (virtual) profit already made for the cargo packet
 }
 
@@ -1245,6 +1342,30 @@ static bool IsArticulatedVehicleEmpty(Vehicle *v)
 }
 
 /**
+ * Tests, whether vehicle's next order leads to current order.
+ * @param v Vehicle
+ * @return True, if true ...
+ */
+static bool VehicleStayConditional(const Vehicle * v)
+{
+	if (v->GetNumOrders() > 1) {
+		const Order * order = v->GetOrder(v->cur_real_order_index);
+		const Order * next_order = order->next;
+
+		/* Next order must be conditional. */
+		if (next_order != NULL && next_order->IsType(OT_CONDITIONAL)) {
+			const VehicleOrderID ord_id = ProcessConditionalOrder(next_order, v);
+			/* We jump on conditional order to the same station we are currently at. */
+			if (ord_id != INVALID_VEH_ORDER_ID && v->GetOrder(ord_id)->index == order->index) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+/**
  * Loads/unload the vehicle if possible.
  * @param front the vehicle to be (un)loaded
  * @param cargo_left the amount of each cargo type that is
@@ -1252,9 +1373,11 @@ static bool IsArticulatedVehicleEmpty(Vehicle *v)
  *                   picked up by another vehicle when all
  *                   previous vehicles have loaded.
  */
-static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
+static void LoadUnloadVehicle(Vehicle *front, StationCargoList::OrderMap (&cargo_left)[NUM_CARGO])
 {
 	assert(front->current_order.IsType(OT_LOADING));
+
+	OrderID last_order = front->last_order_id;
 
 	/* We have not waited enough time till the next round of loading/unloading */
 	if (front->load_unload_ticks != 0) {
@@ -1263,7 +1386,15 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 			for (Vehicle *v = front; v != NULL; v = v->Next()) {
 				int cap_left = v->cargo_cap;
 				if (!HasBit(v->vehicle_flags, VF_CARGO_UNLOADING)) cap_left -= v->cargo.Count();
-				if (cap_left > 0) cargo_left[v->cargo_type] -= cap_left;
+				if (cap_left > 0) {
+					/* Try the bucket for our next destination first. */
+					int loaded = min(cap_left, cargo_left[v->cargo_type][last_order]);
+					cargo_left[v->cargo_type][last_order] -= loaded;
+
+					/* Reserve from the common bucket if still space left. */
+					loaded = min(cap_left - loaded, cargo_left[v->cargo_type][INVALID_ORDER]);
+					cargo_left[v->cargo_type][INVALID_ORDER] -= loaded;
+				}
 			}
 		}
 		return;
@@ -1348,15 +1479,44 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 			uint amount_unloaded = _settings_game.order.gradual_loading ? min(cargo_count, load_amount) : cargo_count;
 			bool remaining = false; // Are there cargo entities in this vehicle that can still be unloaded here?
 			bool accepted  = false; // Is the cargo accepted by the station?
+			bool did_transfer = false;
 
 			payment->SetCargo(v->cargo_type);
 
-			if (HasBit(ge->acceptance_pickup, GoodsEntry::GES_ACCEPTANCE) && !(front->current_order.GetUnloadType() & OUFB_TRANSFER)) {
-				/* The cargo has reached its final destination, the packets may now be destroyed */
-				remaining = v->cargo.MoveTo<StationCargoList>(NULL, amount_unloaded, VehicleCargoList::MTA_FINAL_DELIVERY, payment, last_visited);
+			if (CargoHasDestinations(v->cargo_type)) {
+				/* This cargo type has destinations enabled, this means explicit transfer
+				 * orders are overridden for cargo packets with destination.
+				 * Default action for destination-less cargo packets is final delivery when
+				 * accepted, otherwise no action. If the current order is forced unload,
+				 * always unload all cargo. */
+				VehicleCargoList::MoveToAction mta = HasBit(ge->acceptance_pickup, GoodsEntry::GES_ACCEPTANCE) ? VehicleCargoList::MTA_FINAL_DELIVERY : VehicleCargoList::MTA_NO_ACTION;
+				if (front->current_order.GetUnloadType() & OUFB_UNLOAD) mta = VehicleCargoList::MTA_UNLOAD; //front was u
+				remaining = v->cargo.MoveTo(&ge->cargo, amount_unloaded, mta, payment, last_visited, last_order, v->cargo_type, &did_transfer);
 
 				dirty_vehicle = true;
 				accepted = true;
+			} else {
+				/* Cargo destinations are not enabled, handle transfer orders. */
+				if (HasBit(ge->acceptance_pickup, GoodsEntry::GES_ACCEPTANCE) && !(front->current_order.GetUnloadType() & OUFB_TRANSFER)) { //front was u
+					/* The cargo has reached its final destination, the packets may now be destroyed */
+					remaining = v->cargo.MoveTo<StationCargoList>(NULL, amount_unloaded, VehicleCargoList::MTA_FINAL_DELIVERY, payment, last_visited, v->cargo_type);
+
+					dirty_vehicle = true;
+					accepted = true;
+				}
+
+				/* The !accepted || v->cargo.Count == cargo_count clause is there
+				 * to make it possible to force unload vehicles at the station where
+				 * they were loaded, but to not force unload the vehicle when the
+				 * station is still accepting the cargo in the vehicle. It doesn't
+				 * accept cargo that was loaded at the same station. */
+				if ((front->current_order.GetUnloadType() & (OUFB_UNLOAD | OUFB_TRANSFER)) && (!accepted || v->cargo.Count() == cargo_count)) { //front was u
+					remaining = v->cargo.MoveTo(&ge->cargo, amount_unloaded, front->current_order.GetUnloadType() & OUFB_TRANSFER ? VehicleCargoList::MTA_TRANSFER : VehicleCargoList::MTA_UNLOAD, payment, last_visited, v->cargo_type); //front was u
+
+					did_transfer = true;
+					dirty_vehicle = true;
+					accepted = true;
+				}
 			}
 
 			/* The !accepted || v->cargo.Count == cargo_count clause is there
@@ -1364,15 +1524,15 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 			 * they were loaded, but to not force unload the vehicle when the
 			 * station is still accepting the cargo in the vehicle. It doesn't
 			 * accept cargo that was loaded at the same station. */
-			if ((front->current_order.GetUnloadType() & (OUFB_UNLOAD | OUFB_TRANSFER)) && (!accepted || v->cargo.Count() == cargo_count)) {
-				remaining = v->cargo.MoveTo(&ge->cargo, amount_unloaded, front->current_order.GetUnloadType() & OUFB_TRANSFER ? VehicleCargoList::MTA_TRANSFER : VehicleCargoList::MTA_UNLOAD, payment);
+			if (did_transfer) {
+				/* Update station information. */
 				if (!HasBit(ge->acceptance_pickup, GoodsEntry::GES_PICKUP)) {
 					SetBit(ge->acceptance_pickup, GoodsEntry::GES_PICKUP);
 					InvalidateWindowData(WC_STATION_LIST, last_visited);
 				}
-
-				dirty_vehicle = dirty_station = true;
-			} else if (!accepted) {
+				dirty_station = true;
+			}
+			if (!accepted) {
 				/* The order changed while unloading (unset unload/transfer) or the
 				 * station does not accept our goods. */
 				ClrBit(v->vehicle_flags, VF_CARGO_UNLOADING);
@@ -1436,13 +1596,13 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 				FOR_EACH_SET_CARGO_ID(cid, refit_mask) {
 					/* Consider refitting to this cargo, if other vehicles of the consist cannot
 					 * already take the cargo without refitting */
-					if (cargo_left[cid] > (int)consist_capleft[cid] + amount) {
+					if (cargo_left[cid][last_order] + cargo_left[cid][INVALID_ORDER] > (int)consist_capleft[cid] + amount) {
 						/* Try to find out if auto-refitting would succeed. In case the refit is allowed,
 						 * the returned refit capacity will be greater than zero. */
 						new_subtype = GetBestFittingSubType(v, v, cid);
 						DoCommand(v_start->tile, v_start->index, cid | 1U << 6 | new_subtype << 8 | 1U << 16, DC_QUERY_COST, GetCmdRefitVeh(v_start)); // Auto-refit and only this vehicle including artic parts.
 						if (_returned_refit_capacity > 0) {
-							amount = cargo_left[cid] - consist_capleft[cid];
+							amount = cargo_left[cid][last_order] + cargo_left[cid][INVALID_ORDER] - consist_capleft[cid];
 							new_cid = cid;
 						}
 					}
@@ -1495,11 +1655,12 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 		int cap_left = v->cargo_cap - v->cargo.Count();
 		if (!ge->cargo.Empty() && cap_left > 0) {
 			uint cap = cap_left;
-			uint count = ge->cargo.Count();
+			uint count = ge->cargo.CountForNextHop(last_order) + ge->cargo.CountForNextHop(INVALID_ORDER);
 
 			/* Skip loading this vehicle if another train/vehicle is already handling
-			 * the same cargo type at this station */
-			if (_settings_game.order.improved_load && cargo_left[v->cargo_type] <= 0) {
+			 * the same cargo type at this station. Check the buckets for our next
+			 * destination and the general bucket. */
+			if (_settings_game.order.improved_load && cargo_left[v->cargo_type][last_order] <= 0 && cargo_left[v->cargo_type][INVALID_ORDER] <= 0) {
 				SetBit(cargo_not_full, v->cargo_type);
 				continue;
 			}
@@ -1511,14 +1672,23 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 			}
 			if (_settings_game.order.improved_load) {
 				/* Don't load stuff that is already 'reserved' for other vehicles */
-				cap = min((uint)cargo_left[v->cargo_type], cap);
-				count = cargo_left[v->cargo_type];
+				count = cargo_left[v->cargo_type][last_order] + cargo_left[v->cargo_type][INVALID_ORDER];
+
+				/* Try the bucket for our next destination first. */
+				int load_next = min<uint>(cap, cargo_left[v->cargo_type][last_order]);
+
+				/* Reserve from the common bucket if still space left. */
+				int load_common = min<uint>(cap - load_next, cargo_left[v->cargo_type][INVALID_ORDER]);
+
+				cap = load_next + load_common;
+				cargo_left[v->cargo_type][last_order] -= load_next;
+
 				if (use_autorefit) {
 					/* When using autorefit, reserve all cargo for this wagon to prevent other wagons
 					 * from feeling the need to refit. */
-					uint total_cap_left = v->cargo_cap - v->cargo.Count();
-					cargo_left[v->cargo_type] -= total_cap_left;
+					uint total_cap_left = v->cargo_cap - v->cargo.Count() - load_common;
 					consist_capleft[v->cargo_type] -= total_cap_left;
+					cargo_left[v->cargo_type][INVALID_ORDER] -= total_cap_left;
 					if (total_cap_left > cap && count > cap) {
 						/* Remember if there are reservations left so that we don't stop
 						 * loading before they're loaded. */
@@ -1527,7 +1697,7 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 				} else {
 					/* Update cargo left; but don't reserve everything yet, so other wagons
 					 * of the same consist load in parallel. */
-					cargo_left[v->cargo_type] -= cap;
+					cargo_left[v->cargo_type][INVALID_ORDER] -= load_common;
 				}
 			}
 
@@ -1550,7 +1720,7 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 			completely_emptied = false;
 			anything_loaded = true;
 
-			ge->cargo.MoveTo(&v->cargo, cap, StationCargoList::MTA_CARGO_LOAD, NULL, st->xy);
+			ge->cargo.MoveTo(&v->cargo, cap, StationCargoList::MTA_CARGO_LOAD, NULL, last_visited, last_order, v->cargo_type);
 
 			st->time_since_load = 0;
 			st->last_vehicle_type = v->type;
@@ -1594,20 +1764,29 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 		for (Vehicle *v = front; v != NULL; v = v->Next()) {
 			int cap_left = v->cargo_cap;
 			if (!HasBit(v->vehicle_flags, VF_CARGO_UNLOADING)) {
-				if (use_autorefit) {
+				if ( use_autorefit || VehicleStayConditional(front) )  {
 					continue;
 				} else {
 					cap_left -= v->cargo.Count();
 				}
 			}
-			if (cap_left > 0) cargo_left[v->cargo_type] -= cap_left;
+			if (cap_left > 0) {
+				/* Try the bucket for our next destination first. */
+				int loaded = min(cap_left, cargo_left[v->cargo_type][last_order]);
+				cargo_left[v->cargo_type][last_order] -= loaded;
+
+				/* Reserve from the common bucket if still space left. */
+				loaded = min(cap_left - loaded, cargo_left[v->cargo_type][INVALID_ORDER]);
+				cargo_left[v->cargo_type][INVALID_ORDER] -= loaded;
+			}
 		}
 	}
 
 	if (!anything_unloaded) delete payment;
 
 	ClrBit(front->vehicle_flags, VF_STOP_LOADING);
-	if (anything_loaded || anything_unloaded) {
+	const bool condition_stay = VehicleStayConditional(front);
+	if (!condition_stay && (anything_loaded || anything_unloaded)) {
 		if (_settings_game.order.gradual_loading) {
 			/* The time it takes to load one 'slice' of cargo or passengers depends
 			 * on the vehicle type - the values here are those found in TTDPatch */
@@ -1621,7 +1800,7 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 				front->current_order_time >= (uint)max(front->current_order.wait_time - front->lateness_counter, 0)) {
 			SetBit(front->vehicle_flags, VF_STOP_LOADING);
 		}
-	} else {
+	} else if (!condition_stay) {
 		bool finished_loading = true;
 		if (front->current_order.GetLoadType() & OLFB_FULL_LOAD) {
 			if (front->current_order.GetLoadType() == OLF_FULL_LOAD_ANY) {
@@ -1637,7 +1816,7 @@ static void LoadUnloadVehicle(Vehicle *front, int *cargo_left)
 		}
 		unloading_time = 20;
 
-		SB(front->vehicle_flags, VF_LOADING_FINISHED, 1, finished_loading);
+		if (finished_loading) SetBit(front->vehicle_flags, VF_LOADING_FINISHED);
 	}
 
 	if (front->type == VEH_TRAIN) {
@@ -1718,9 +1897,10 @@ void LoadUnloadStation(Station *st)
 	 */
 	if (last_loading == NULL) return;
 
-	int cargo_left[NUM_CARGO];
-
-	for (uint i = 0; i < NUM_CARGO; i++) cargo_left[i] = st->goods[i].cargo.Count();
+	StationCargoList::OrderMap cargo_left[NUM_CARGO];
+	for (CargoID i = 0; i < NUM_CARGO; i++) {
+		cargo_left[i] = st->goods[i].cargo.CountForNextHop();
+	}
 
 	for (iter = st->loading_vehicles.begin(); iter != st->loading_vehicles.end(); ++iter) {
 		Vehicle *v = *iter;

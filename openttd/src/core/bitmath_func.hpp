@@ -321,6 +321,39 @@ static inline T ROR(const T x, const uint8 n)
 }
 
 /**
+ * Swap odd and even bits in a variable.
+ *
+ * Bit 0 is swapped with bit 1, bit 2 with bit 3 and so on.
+ *
+ * @param x The value in which we want to swap bits
+ * @return The bit swapped value
+ */
+template <typename T>
+static inline T SwapOddEvenBits(T x)
+{
+	return (T)(((x >> 1) & (T)0x5555555555555555LL) | ((x & (T)0x5555555555555555LL) << 1));
+}
+
+/**
+ * Interleave bits (a.k.a. Morton code) of two 8-bit integers \c x and \c y.
+ *
+ * The result is computed by putting consecutive \c x bits at even positions and consecutive \c y
+ * bits at odd positions:
+ *
+ * <tt> (X7 X6 ... X1 X0, Y7 Y6 ... Y1 Y0)   ->   Y7 X7 Y6 X6 ... Y1 X1 Y0 X0 </tt>
+ *
+ * @param x The bits to put at even positions.
+ * @param y The bits to put at odd positions.
+ * @return The interleaved value.
+ */
+static inline uint16 InterleaveBits8(uint8 x, uint8 y)
+{
+	/* Found on the "Bit Twiddling Hacks" webpage: http://graphics.stanford.edu/~seander/bithacks.html */
+	return (((x * 0x0101010101010101ULL & 0x8040201008040201ULL) * 0x0102040810204081ULL >> 49) & 0x5555) |
+			(((y * 0x0101010101010101ULL & 0x8040201008040201ULL) * 0x0102040810204081ULL >> 48) & 0xAAAA);
+}
+
+/**
  * Do an operation for each set bit in a value.
  *
  * This macros is used to do an operation for each set

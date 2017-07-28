@@ -31,6 +31,7 @@
 #include "townname_func.h"
 #include "core/geometry_func.hpp"
 #include "genworld.h"
+#include "cargodest_gui.h"
 
 #include "widgets/town_widget.h"
 
@@ -297,10 +298,13 @@ struct TownViewWindow : Window {
 private:
 	Town *town; ///< Town displayed by the window.
 
+	CargoDestinationList dest_list; ///< Sorted list of demand destinations.
+	uint dest_list_top; ///< Top coordinate of the destination list in the #WID_TV_INFOPANEL widget.
+
 public:
 	static const int WID_TV_HEIGHT_NORMAL = 150;
 
-	TownViewWindow(const WindowDesc *desc, WindowNumber window_number) : Window()
+	TownViewWindow(const WindowDesc *desc, WindowNumber window_number) : Window(), dest_list(Town::Get(window_number))
 	{
 		this->CreateNestedTree(desc);
 
@@ -400,6 +404,8 @@ public:
 			DrawString(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_LEFT, y += FONT_HEIGHT_NORMAL, STR_TOWN_VIEW_NOISE_IN_TOWN);
 		}
 
+		y = this->dest_list.DrawList(r.left, r.right, y);
+
 		if (this->town->text != NULL) {
 			SetDParamStr(0, this->town->text);
 			DrawStringMultiLine(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_LEFT, y += FONT_HEIGHT_NORMAL, UINT16_MAX, STR_JUST_RAW_STRING, TC_BLACK);
@@ -442,6 +448,10 @@ public:
 			case WID_TV_DELETE: // delete town - only available on Scenario editor
 				DoCommandP(0, this->window_number, 0, CMD_DELETE_TOWN | CMD_MSG(STR_ERROR_TOWN_CAN_T_DELETE));
 				break;
+
+			case WID_TV_INFO: // jump to demand destination
+				this->dest_list.OnClick(pt.y - this->dest_list_top - this->GetWidget<NWidgetBase>(widget)->pos_y);
+				break;
 		}
 	}
 
@@ -458,7 +468,7 @@ public:
 	 * Gets the desired height for the information panel.
 	 * @return the desired height in pixels.
 	 */
-	uint GetDesiredInfoHeight(int width) const
+	uint GetDesiredInfoHeight(int width)
 	{
 		uint aimed_height = 3 * FONT_HEIGHT_NORMAL + WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM;
 
@@ -477,6 +487,9 @@ public:
 		aimed_height += FONT_HEIGHT_NORMAL;
 
 		if (_settings_game.economy.station_noise_level) aimed_height += FONT_HEIGHT_NORMAL;
+
+		this->dest_list_top = aimed_height - FONT_HEIGHT_NORMAL;
+		aimed_height += this->dest_list.GetListHeight();
 
 		if (this->town->text != NULL) {
 			SetDParamStr(0, this->town->text);
@@ -516,6 +529,13 @@ public:
 		/* Called when setting station noise or required cargoes have changed, in order to resize the window */
 		this->SetDirty(); // refresh display for current size. This will allow to avoid glitches when downgrading
 		this->ResizeWindowAsNeeded();
+
+		/* Rebuild destination list if data is not zero, otherwise just resort. */
+		if (data != 0) {
+			this->dest_list.InvalidateData();
+		} else {
+			this->dest_list.Resort();
+		}
 	}
 
 	virtual void OnQueryTextFinished(char *str)

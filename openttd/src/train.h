@@ -48,6 +48,8 @@ void CheckTrainsLengths();
 void FreeTrainTrackReservation(const Train *v, TileIndex origin = INVALID_TILE, Trackdir orig_td = INVALID_TRACKDIR);
 bool TryPathReserve(Train *v, bool mark_as_stuck = false, bool first_tile_okay = false);
 
+void DeleteVisibleTrain(Train *v);
+
 int GetTrainStopLocation(StationID station_id, TileIndex tile, const Train *v, int *station_ahead, int *station_length);
 
 void GetTrainSpriteSize(EngineID engine, uint &width, uint &height, int &xoffs, int &yoffs, EngineImageType image_type);
@@ -83,6 +85,11 @@ struct Train FINAL : public GroundVehicle<Train, VEH_TRAIN> {
 	RailTypeByte railtype;
 	RailTypes compatible_railtypes;
 
+	uint16 planned_speed; ///< planned speed that we are trying to achieve	
+	uint16 max_signal_speed; ///< max speed by last passed signal
+	uint16 yellow_signal_speed; ///< stored maximum speed on next yellow signal
+	uint16 double_yellow_signal_speed; ///< stored maximum speed on next double yellow signal
+
 	/** Ticks waiting in front of a signal, ticks being stuck or a counter for forced proceeding through signals. */
 	uint16 wait_counter;
 
@@ -104,6 +111,7 @@ struct Train FINAL : public GroundVehicle<Train, VEH_TRAIN> {
 	Money GetRunningCost() const;
 	int GetDisplayImageWidth(Point *offset = NULL) const;
 	bool IsInDepot() const { return this->track == TRACK_BIT_DEPOT; }
+	Money CalculateCurrentOverallValue() const;
 	bool Tick();
 	void OnNewDay();
 	uint Crash(bool flooded = false);
@@ -145,6 +153,13 @@ struct Train FINAL : public GroundVehicle<Train, VEH_TRAIN> {
 		if (v != NULL && v->IsRearDualheaded()) v = v->GetPrevVehicle();
 
 		return v;
+	}
+
+	// MYGUI
+	inline Train *GetLastUnit() {
+		Train *tmp = this;
+		while ( tmp->GetNextUnit() ) tmp = tmp->GetNextUnit();
+		return tmp;
 	}
 
 	/**
@@ -248,7 +263,7 @@ protected: // These functions should not be called outside acceleration code.
 	 */
 	inline AccelStatus GetAccelerationStatus() const
 	{
-		return (this->vehstatus & VS_STOPPED) || HasBit(this->flags, VRF_REVERSING) || HasBit(this->flags, VRF_TRAIN_STUCK) ? AS_BRAKE : AS_ACCEL;
+	return (this->vehstatus & VS_STOPPED) || HasBit(this->flags, VRF_REVERSING) || HasBit(this->flags, VRF_TRAIN_STUCK) || (_settings_game.vehicle.train_acceleration_model == AM_YAAM && this->cur_speed > this->planned_speed) ? AS_BRAKE : AS_ACCEL;
 	}
 
 	/**
@@ -319,6 +334,16 @@ protected: // These functions should not be called outside acceleration code.
 		return false;
 	}
 };
+
+
+// TODO
+CommandCost CmdBuildRailVehicle(TileIndex, DoCommandFlag, const Engine *, uint16, Vehicle**);
+CommandCost CmdMoveRailVehicle(TileIndex, DoCommandFlag , uint32, uint32, const char *);
+CommandCost CmdMoveVirtualRailVehicle(TileIndex, DoCommandFlag, uint32, uint32, const char*);
+
+Train* CmdBuildVirtualRailWagon(const Engine*);
+Train* CmdBuildVirtualRailVehicle(EngineID);
+CommandCost CmdSellRailWagon(DoCommandFlag, Vehicle*, uint16, uint32);
 
 #define FOR_ALL_TRAINS(var) FOR_ALL_VEHICLES_OF_TYPE(Train, var)
 

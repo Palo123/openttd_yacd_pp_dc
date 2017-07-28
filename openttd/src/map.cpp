@@ -19,16 +19,7 @@
 extern "C" _CRTIMP void __cdecl _assert(void *, void *, unsigned);
 #endif
 
-uint _map_log_x;     ///< 2^_map_log_x == _map_size_x
-uint _map_log_y;     ///< 2^_map_log_y == _map_size_y
-uint _map_size_x;    ///< Size of the map along the X
-uint _map_size_y;    ///< Size of the map along the Y
-uint _map_size;      ///< The number of tiles on the map
-uint _map_tile_mask; ///< _map_size - 1 (to mask the mapsize)
-
-Tile *_m = NULL;          ///< Tiles of the map
-TileExtended *_me = NULL; ///< Extended Tiles of the map
-
+MainMap _main_map; ///< The main tile array.
 
 /**
  * (Re)allocates a map with the given dimension
@@ -37,29 +28,31 @@ TileExtended *_me = NULL; ///< Extended Tiles of the map
  */
 void AllocateMap(uint size_x, uint size_y)
 {
+       DEBUG(map, 2, "Min/max map size %d/%d, max map tiles %d", MIN_MAP_SIZE, MAX_MAP_SIZE, MAX_MAP_TILES);
+       DEBUG(map, 1, "Allocating map of size %dx%d", size_x, size_y);
+
 	/* Make sure that the map size is within the limits and that
 	 * size of both axes is a power of 2. */
-	if (!IsInsideMM(size_x, MIN_MAP_SIZE, MAX_MAP_SIZE + 1) ||
-			!IsInsideMM(size_y, MIN_MAP_SIZE, MAX_MAP_SIZE + 1) ||
+       if (size_x * size_y > MAX_MAP_TILES ||
+                       size_x < MIN_MAP_SIZE ||
+                       size_y < MIN_MAP_SIZE ||
 			(size_x & (size_x - 1)) != 0 ||
 			(size_y & (size_y - 1)) != 0) {
 		error("Invalid map size");
 	}
 
-	DEBUG(map, 1, "Allocating map of size %dx%d", size_x, size_y);
+	_main_map.log_x = FindFirstBit(size_x);
+	_main_map.log_y = FindFirstBit(size_y);
+	_main_map.size_x = size_x;
+	_main_map.size_y = size_y;
+	_main_map.size = size_x * size_y;
+	_main_map.tile_mask = _main_map.size - 1;
 
-	_map_log_x = FindFirstBit(size_x);
-	_map_log_y = FindFirstBit(size_y);
-	_map_size_x = size_x;
-	_map_size_y = size_y;
-	_map_size = size_x * size_y;
-	_map_tile_mask = _map_size - 1;
+	free(_main_map.m);
+	free(_main_map.me);
 
-	free(_m);
-	free(_me);
-
-	_m = CallocT<Tile>(_map_size);
-	_me = CallocT<TileExtended>(_map_size);
+	_main_map.m = CallocT<Tile>(_main_map.size);
+	_main_map.me = CallocT<TileExtended>(_main_map.size);
 }
 
 
@@ -95,7 +88,25 @@ TileIndex TileAdd(TileIndex tile, TileIndexDiff add,
 
 	return TileXY(x, y);
 }
+
+GenericTileIndex TileAddXY(GenericTileIndex tile, int dx, int dy, const char *exp, const char *file, int line)
+{
+	uint x = TileX(tile) + dx;
+	uint y = TileY(tile) + dy;
+
+	if (x >= MapSizeX(MapOf(tile)) || y >= MapSizeY(MapOf(tile))) {
+		char buf[512];
+		snprintf(buf, lengthof(buf), "TILE_ADDXY(%s) when adding 0x%.4X and <0x%.4X, 0x%.4X> failed", exp, IndexOf(tile), dx, dy);
+#if !defined(_MSC_VER) || defined(WINCE)
+		fprintf(stderr, "%s:%d %s\n", file, line, buf);
+#else
+		_assert(buf, (char*)file, line);
 #endif
+	}
+
+	return TileXY<true>(x, y, MapOf(tile));
+}
+#endif /* _DEBUG */
 
 /**
  * This function checks if we add addx/addy to tile, if we

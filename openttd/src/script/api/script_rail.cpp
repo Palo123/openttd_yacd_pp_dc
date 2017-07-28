@@ -190,7 +190,7 @@
 			if (ScriptObject::DoCommand(tile, p1, p2 | spec->cls_id | index << 8, CMD_BUILD_RAIL_STATION)) return true;
 		}
 	}
-
+	
 	return ScriptObject::DoCommand(tile, p1, p2, CMD_BUILD_RAIL_STATION);
 }
 

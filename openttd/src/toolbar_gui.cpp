@@ -40,6 +40,7 @@
 #include "textbuf_gui.h"
 #include "newgrf_debug.h"
 #include "hotkeys.h"
+#include "watch_gui.h"
 #include "engine_base.h"
 #include "highscore.h"
 
@@ -258,6 +259,7 @@ enum OptionMenuEntries {
 	OME_SHOW_SIGNS,
 	OME_SHOW_COMPETITOR_SIGNS,
 	OME_FULL_ANIMATION,
+	OME_RAIL_FENCES,
 	OME_FULL_DETAILS,
 	OME_TRANSPARENTBUILDINGS,
 	OME_SHOW_STATIONSIGNS,
@@ -287,6 +289,7 @@ static CallBackFunction ToolbarOptionsClick(Window *w)
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_SIGNS_DISPLAYED,         OME_SHOW_SIGNS, false, HasBit(_display_opt, DO_SHOW_SIGNS)));
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_SHOW_COMPETITOR_SIGNS,   OME_SHOW_COMPETITOR_SIGNS, false, HasBit(_display_opt, DO_SHOW_COMPETITOR_SIGNS)));
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_FULL_ANIMATION,          OME_FULL_ANIMATION, false, HasBit(_display_opt, DO_FULL_ANIMATION)));
+	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_RAIL_FENCES,             OME_RAIL_FENCES, false, HasBit(_display_opt, DO_RAIL_FENCES)));
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_FULL_DETAIL,             OME_FULL_DETAILS, false, HasBit(_display_opt, DO_FULL_DETAIL)));
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_TRANSPARENT_BUILDINGS,   OME_TRANSPARENTBUILDINGS, false, IsTransparencySet(TO_HOUSES)));
 	list->push_back(new DropDownListCheckedItem(STR_SETTINGS_MENU_TRANSPARENT_SIGNS,       OME_SHOW_STATIONSIGNS, false, IsTransparencySet(TO_SIGNS)));
@@ -320,6 +323,7 @@ static CallBackFunction MenuClickSettings(int index)
 			InvalidateWindowClassesData(WC_SIGN_LIST, -1);
 			break;
 		case OME_FULL_ANIMATION:       ToggleBit(_display_opt, DO_FULL_ANIMATION);      break;
+		case OME_RAIL_FENCES:          ToggleBit(_display_opt, DO_RAIL_FENCES);         break;
 		case OME_FULL_DETAILS:         ToggleBit(_display_opt, DO_FULL_DETAIL);         break;
 		case OME_TRANSPARENTBUILDINGS: ToggleTransparency(TO_HOUSES);                   break;
 		case OME_SHOW_STATIONSIGNS:    ToggleTransparency(TO_SIGNS);                    break;
@@ -410,9 +414,10 @@ enum MapMenuEntries {
 	MME_SHOW_SMALLMAP        = 0,
 	MME_SHOW_EXTRAVIEWPORTS,
 	MME_SHOW_SIGNLISTS,
+	MME_WATCH_COMPANY,
 	MME_SHOW_TOWNDIRECTORY,    ///< This entry is only used in Editor mode
-	MME_MENUCOUNT_NORMAL     = 3,
-	MME_MENUCOUNT_EDITOR     = 4,
+	MME_MENUCOUNT_NORMAL     = 4,
+	MME_MENUCOUNT_EDITOR     = 5,
 };
 
 static CallBackFunction ToolbarMapClick(Window *w)
@@ -440,6 +445,7 @@ static CallBackFunction MenuClickMap(int index)
 		case MME_SHOW_EXTRAVIEWPORTS: ShowExtraViewPortWindow(); break;
 		case MME_SHOW_SIGNLISTS:      ShowSignList();            break;
 		case MME_SHOW_TOWNDIRECTORY:  if (_game_mode == GM_EDITOR) ShowTownDirectory(); break;
+		case MME_WATCH_COMPANY:       ShowWatchWindow( INVALID_COMPANY );
 	}
 	return CBF_NONE;
 }
@@ -874,7 +880,7 @@ static CallBackFunction MenuClickBuildAir(int index)
 
 static CallBackFunction ToolbarForestClick(Window *w)
 {
-	PopupMainToolbMenu(w, WID_TN_LANDSCAPE, STR_LANDSCAPING_MENU_LANDSCAPING, 3);
+	PopupMainToolbMenu(w, WID_TN_LANDSCAPE, STR_LANDSCAPING_MENU_LANDSCAPING, 4);
 	return CBF_NONE;
 }
 
@@ -888,8 +894,9 @@ static CallBackFunction MenuClickForest(int index)
 {
 	switch (index) {
 		case 0: ShowTerraformToolbar();  break;
-		case 1: ShowBuildTreesToolbar(); break;
-		case 2: return SelectSignTool();
+		case 1: ShowClipboardToolbar();  break;
+		case 2: ShowBuildTreesToolbar(); break;
+		case 3: return SelectSignTool();
 	}
 	return CBF_NONE;
 }

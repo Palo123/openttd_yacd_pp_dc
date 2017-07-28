@@ -95,6 +95,7 @@ enum ViewportDragDropSelectionProcess {
 	DDSP_RAISE_AND_LEVEL_AREA, ///< Raise / level area
 	DDSP_LOWER_AND_LEVEL_AREA, ///< Lower / level area
 	DDSP_LEVEL_AREA,           ///< Level area
+	DDSP_BUY_LAND,             ///< Buy land
 	DDSP_CREATE_DESERT,        ///< Fill area with desert
 	DDSP_CREATE_ROCKS,         ///< Fill area with rocks
 	DDSP_CREATE_WATER,         ///< Create a canal
@@ -117,6 +118,9 @@ enum ViewportDragDropSelectionProcess {
 	DDSP_BUILD_TRUCKSTOP,      ///< Road stop placement (trucks)
 	DDSP_REMOVE_BUSSTOP,       ///< Road stop removal (buses)
 	DDSP_REMOVE_TRUCKSTOP,     ///< Road stop removal (trucks)
+
+	/* Clipboard */
+	DDSP_COPY_TO_CLIPBOARD,    ///< Copy area to clipboard
 };
 
 #endif /* VIEWPORT_TYPE_H */

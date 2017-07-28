@@ -22,86 +22,125 @@
     <Filter Include="Save/Load handlers">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000006}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Tables">
+    <Filter Include="MYGUI SL HANDLERS">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000007}</UniqueIdentifier>
     </Filter>
-    <Filter Include="MD5">
+    <Filter Include="Tables">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000008}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Script">
+    <Filter Include="MD5">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000009}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Squirrel">
+    <Filter Include="Script">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000010}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Squirrel headers">
+    <Filter Include="Squirrel">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000011}</UniqueIdentifier>
     </Filter>
-    <Filter Include="AI Core">
+    <Filter Include="Squirrel headers">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000012}</UniqueIdentifier>
     </Filter>
-    <Filter Include="AI API">
+    <Filter Include="AI Core">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000013}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Game API">
+    <Filter Include="AI API">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000014}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Game Core">
+    <Filter Include="Game API">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000015}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Script API">
+    <Filter Include="Game Core">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000016}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Script API Implementation">
+    <Filter Include="Script API">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000017}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Blitters">
+    <Filter Include="Script API Implementation">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000018}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Drivers">
+    <Filter Include="Blitters">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000019}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Sprite loaders">
+    <Filter Include="Drivers">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000020}</UniqueIdentifier>
     </Filter>
-    <Filter Include="NewGRF">
+    <Filter Include="Sprite loaders">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000021}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Map Accessors">
+    <Filter Include="NewGRF">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000022}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Misc">
+    <Filter Include="Map Accessors">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000023}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Network Core">
+    <Filter Include="Misc">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000024}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Pathfinder">
+    <Filter Include="Network Core">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000025}</UniqueIdentifier>
     </Filter>
-    <Filter Include="NPF">
+    <Filter Include="Pathfinder">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000026}</UniqueIdentifier>
     </Filter>
-    <Filter Include="YAPF">
+    <Filter Include="NPF">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000027}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Video">
+    <Filter Include="YAPF">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000028}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Music">
+    <Filter Include="Video">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000029}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Sound">
+    <Filter Include="Music">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000030}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Windows files">
+    <Filter Include="Sound">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000031}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Threading">
+    <Filter Include="Windows files">
       <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000032}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Threading">
+      <UniqueIdentifier>{c76ff9f1-1e62-46d8-8d55-000000000033}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\aaa_template_gui_main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\aaa_template_gui_create.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\aaa_template_gui_create_virtualtrain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\aaa_template_gui_replaceall.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\aaa_template_vehicle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\aaa_template_vehicle_func.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClInclude Include="..\src\aaa_template_gui_main.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\aaa_template_gui_create.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\aaa_template_gui_create_virtualtrain.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\aaa_template_gui_replaceall.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\aaa_template_vehicle.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\aaa_template_vehicle_func.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
     <ClCompile Include="..\src\airport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -117,6 +156,9 @@
     <ClCompile Include="..\src\bmp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\cargodest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\cargomonitor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -127,6 +169,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\cheat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\clipboard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\command.cpp">
@@ -348,7 +393,10 @@
     <ClCompile Include="..\src\townname.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\vehicle.cpp">
+    <ClCompile Include="..\src\triphistory_cmd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\trafficlight.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\vehiclelist.cpp">
@@ -411,6 +459,18 @@
     <ClInclude Include="..\src\cargo_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\cargodest_base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\cargodest_func.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\cargodest_gui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\cargodest_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\cargomonitor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -427,6 +487,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\clear_func.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\clipboard_func.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\clipboard_gui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\clipboard_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\cmd_helper.h">
@@ -463,6 +532,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\console_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\copypaste_cmd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\crashlog.h">
@@ -654,6 +726,9 @@
     <ClInclude Include="..\src\mixer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\triphistory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\network\network.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -798,6 +873,9 @@
     <ClInclude Include="..\src\object.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClCompile Include="..\src\triphistory_gui.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
     <ClInclude Include="..\src\object_base.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1005,6 +1083,9 @@
     <ClInclude Include="..\src\tile_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\tilearea_func.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\tilearea_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1039,6 +1120,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\track_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\trafficlight.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\trafficlight_func.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\trafficlight_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\train.h">
@@ -1078,6 +1168,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\viewport_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\watch_gui.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\water.h">
@@ -1212,7 +1305,13 @@
     <ClCompile Include="..\src\build_vehicle_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\cargodest_gui.cpp">
+      <Filter>GUI Source Code</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\cheat_gui.cpp">
+      <Filter>GUI Source Code</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\clipboard_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
     <ClCompile Include="..\src\company_gui.cpp">
@@ -1356,6 +1455,9 @@
     <ClCompile Include="..\src\viewport_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\watch_gui.cpp">
+      <Filter>GUI Source Code</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\waypoint_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
@@ -1378,6 +1480,9 @@
       <Filter>Widgets</Filter>
     </ClInclude>
     <ClInclude Include="..\src\widgets\cheat_widget.h">
+      <Filter>Widgets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\widgets\clipboard_widget.h">
       <Filter>Widgets</Filter>
     </ClInclude>
     <ClInclude Include="..\src\widgets\company_widget.h">
@@ -1533,6 +1638,9 @@
     <ClCompile Include="..\src\clear_cmd.cpp">
       <Filter>Command handlers</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\copypaste_cmd.cpp">
+      <Filter>Command handlers</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\company_cmd.cpp">
       <Filter>Command handlers</Filter>
     </ClCompile>
@@ -1618,6 +1726,9 @@
       <Filter>Save/Load handlers</Filter>
     </ClCompile>
     <ClCompile Include="..\src\saveload\autoreplace_sl.cpp">
+      <Filter>Save/Load handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\saveload\cargodest_sl.cpp">
       <Filter>Save/Load handlers</Filter>
     </ClCompile>
     <ClCompile Include="..\src\saveload\cargomonitor_sl.cpp">
@@ -1721,6 +1832,12 @@
     </ClCompile>
     <ClCompile Include="..\src\saveload\waypoint_sl.cpp">
       <Filter>Save/Load handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\saveload\aaa_template_replacement_sl.cpp">
+      <Filter>MYGUI SL HANDLERS</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\saveload\aaa_template_veh_sl.cpp">
+      <Filter>MYGUI SL HANDLERS</Filter>
     </ClCompile>
     <ClInclude Include="..\src\table\airport_defaults.h">
       <Filter>Tables</Filter>
@@ -2805,6 +2922,9 @@
     <ClInclude Include="..\src\pathfinder\yapf\yapf_cache.h">
       <Filter>YAPF</Filter>
     </ClInclude>
+    <ClCompile Include="..\src\pathfinder\yapf\yapf_cargo.cpp">
+      <Filter>YAPF</Filter>
+    </ClCompile>
     <ClInclude Include="..\src\pathfinder\yapf\yapf_common.hpp">
       <Filter>YAPF</Filter>
     </ClInclude>

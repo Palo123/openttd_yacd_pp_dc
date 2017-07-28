@@ -28,10 +28,14 @@ struct AirportTileTable {
 };
 
 /** Iterator to iterate over all tiles belonging to an airport spec. */
-class AirportTileTableIterator : public TileIterator {
+template <bool Tgeneric>
+class AirportTileTableIteratorT : public TileIteratorT<Tgeneric> {
+public:
+	typedef typename TileIteratorT<Tgeneric>::TileIndexType TileIndexType;
+
 private:
 	const AirportTileTable *att; ///< The offsets.
-	TileIndex base_tile;         ///< The tile we base the offsets off.
+	TileIndexType base_tile;         ///< The tile we base the offsets off.
 
 public:
 	/**
@@ -39,17 +43,17 @@ public:
 	 * @param att The TileTable we want to iterate over.
 	 * @param base_tile The basetile for all offsets.
 	 */
-	AirportTileTableIterator(const AirportTileTable *att, TileIndex base_tile) : TileIterator(base_tile + ToTileIndexDiff(att->ti)), att(att), base_tile(base_tile)
+	AirportTileTableIteratorT(const AirportTileTable *att, TileIndexType base_tile) : TileIteratorT<Tgeneric>(base_tile + ToTileIndexDiff<Tgeneric>(att->ti, MapOf(base_tile))), att(att), base_tile(base_tile)
 	{
 	}
 
-	inline TileIterator& operator ++()
+	inline TileIteratorT<Tgeneric>& operator ++()
 	{
 		this->att++;
 		if (this->att->ti.x == -0x80) {
-			this->tile = INVALID_TILE;
+			IndexOf(this->tile) = INVALID_TILE_INDEX;
 		} else {
-			this->tile = this->base_tile + ToTileIndexDiff(this->att->ti);
+			this->tile = this->base_tile + ToTileIndexDiff<Tgeneric>(this->att->ti, MapOf(this->base_tile));
 		}
 		return *this;
 	}
@@ -60,11 +64,13 @@ public:
 		return this->att->gfx;
 	}
 
-	virtual AirportTileTableIterator *Clone() const
+	virtual AirportTileTableIteratorT<Tgeneric> *Clone() const
 	{
-		return new AirportTileTableIterator(*this);
+		return new AirportTileTableIteratorT<Tgeneric>(*this);
 	}
 };
+
+typedef AirportTileTableIteratorT<false> AirportTileTableIterator;
 
 /** List of default airport classes. */
 enum AirportClassID {
@@ -72,6 +78,7 @@ enum AirportClassID {
 	APC_SMALL     = 0,  ///< id for small airports class
 	APC_LARGE,          ///< id for large airports class
 	APC_HUB,            ///< id for hub airports class
+	APC_HUGE,           ///< id for huge airports class
 	APC_HELIPORT,       ///< id for heliports
 	APC_MAX       = 16, ///< maximum number of airport classes
 };
@@ -115,6 +122,8 @@ struct AirportSpec {
 	AirportClassID cls_id;                 ///< the class to which this airport type belongs
 	SpriteID preview_sprite;               ///< preview sprite for this airport
 	uint16 maintenance_cost;               ///< maintenance cost multiplier
+	byte max_circle;                       ///< maximum amout of aircrafts in circle area of airport
+
 	/* Newgrf data */
 	bool enabled;                          ///< Entity still available (by default true). Newgrf can disable it, though.
 	struct GRFFileProps grf_prop;          ///< Properties related to the grf file.

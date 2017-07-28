@@ -24,6 +24,7 @@
 #include "core/random_func.hpp"
 #include "game/game.hpp"
 #include "command_func.h"
+#include "cargodest_func.h"
 
 #include "table/strings.h"
 
@@ -296,13 +297,22 @@ bool FindSubsidyPassengerRoute()
 {
 	if (!Subsidy::CanAllocateItem()) return false;
 
-	const Town *src = Town::GetRandom();
+	Town *src = Town::GetRandom();
 	if (src->cache.population < SUBSIDY_PAX_MIN_POPULATION ||
 			src->GetPercentTransported(CT_PASSENGERS) > SUBSIDY_MAX_PCT_TRANSPORTED) {
 		return false;
 	}
 
-	const Town *dst = Town::GetRandom();
+	const Town *dst = NULL;
+	if (CargoHasDestinations(CT_PASSENGERS)) {
+		/* Try to get a town from the demand destinations. */
+		CargoLink *link = src->GetRandomLink(CT_PASSENGERS, false);
+		if (link == src->cargo_links[CT_PASSENGERS].End()) return NULL;
+		if (link->dest != NULL && link->dest->GetType() != ST_TOWN) return NULL;
+		dst = static_cast<const Town *>(link->dest);
+	}
+	if (dst == NULL) dst = Town::GetRandom();
+
 	if (dst->cache.population < SUBSIDY_PAX_MIN_POPULATION || src == dst) {
 		return false;
 	}
@@ -408,11 +418,22 @@ bool FindSubsidyCargoDestination(CargoID cid, SourceType src_type, SourceID src)
 	/* Choose a random destination. Only consider towns if they can accept the cargo. */
 	SourceType dst_type = (HasBit(_town_cargoes_accepted, cid) && Chance16(1, 2)) ? ST_TOWN : ST_INDUSTRY;
 
+	CargoSourceSink *src_sink = (src_type == ST_TOWN) ? (CargoSourceSink *) Town::Get(src) : (CargoSourceSink *) Industry::Get(src);
+
 	SourceID dst;
 	switch (dst_type) {
 		case ST_TOWN: {
 			/* Select a random town. */
-			const Town *dst_town = Town::GetRandom();
+			const Town *dst_town = NULL;
+
+			if (CargoHasDestinations(cid)) {
+				/* Try to get a town from the demand destinations. */
+				CargoLink *link = src_sink->GetRandomLink(cid, false);
+				if (link == src_sink->cargo_links[cid].End()) return NULL;
+				if (link->dest != NULL && link->dest->GetType() != dst_type) return NULL;
+				dst_town = static_cast<const Town *>(link->dest);
+			}
+			if (dst_town == NULL) dst_town = Town::GetRandom();
 
 			/* Check if the town can accept this cargo. */
 			if (!HasBit(dst_town->cargo_accepted_total, cid)) return false;
@@ -425,15 +446,24 @@ bool FindSubsidyCargoDestination(CargoID cid, SourceType src_type, SourceID src)
 			/* Select a random industry. */
 			const Industry *dst_ind = Industry::GetRandom();
 
+			if (CargoHasDestinations(cid)) {
+				/* Try to get a town from the demand destinations. */
+				CargoLink *link = src_sink->GetRandomLink(cid, false);
+				if (link == src_sink->cargo_links[cid].End()) return NULL;
+				if (link->dest != NULL && link->dest->GetType() != dst_type) return NULL;
+				dst_ind = static_cast<const Industry *>(link->dest);
+			}
+			if (dst_ind == NULL) dst_ind = Industry::GetRandom();
+
+			dst = dst_ind->index;
+
 			/* The industry must accept the cargo */
-			if (dst_ind == NULL ||
+			if (dst_ind == NULL || (src_type == dst_type && src == dst) ||
 					(cid != dst_ind->accepts_cargo[0] &&
 					 cid != dst_ind->accepts_cargo[1] &&
 					 cid != dst_ind->accepts_cargo[2])) {
 				return false;
 			}
-
-			dst = dst_ind->index;
 			break;
 		}
 

@@ -17,7 +17,10 @@
 #include "station_type.h"
 #include "cargo_type.h"
 #include "vehicle_type.h"
+#include "order_type.h"
+#include "cargotype.h"
 #include <list>
+#include <map>
 
 /** Unique identifier for a single cargo packet. */
 typedef uint32 CargoPacketID;
@@ -44,6 +47,12 @@ private:
 	StationID source;           ///< The station where the cargo came from first.
 	TileIndex source_xy;        ///< The origin of the cargo (first station in feeder chain).
 	TileIndex loaded_at_xy;     ///< Location where this cargo has been loaded into the vehicle.
+	TileIndex dest_xy;          ///< Destination tile or INVALID_TILE if no specific destination
+	SourceID dest_id;           ///< Index of the destination.
+	SourceTypeByte dest_type;   ///< Type of #dest_id.
+	byte flags;                 ///< Flags influencing the routing decision of this packet, see #RouteFlags.
+	OrderID next_order;         ///< Next desired hop.
+	StationID next_station;     ///< Unload at this station next.
 
 	/** The CargoList caches, thus needs to know about it. */
 	template <class Tinst> friend class CargoList;
@@ -51,13 +60,14 @@ private:
 	friend class StationCargoList;
 	/** We want this to be saved, right? */
 	friend const struct SaveLoad *GetCargoPacketDesc();
+	friend bool CargodestModeChanged(int32 p1);
 public:
 	/** Maximum number of items in a single cargo packet. */
 	static const uint16 MAX_COUNT = UINT16_MAX;
 
 	CargoPacket();
-	CargoPacket(StationID source, TileIndex source_xy, uint16 count, SourceType source_type, SourceID source_id);
-	CargoPacket(uint16 count, byte days_in_transit, StationID source, TileIndex source_xy, TileIndex loaded_at_xy, Money feeder_share = 0, SourceType source_type = ST_INDUSTRY, SourceID source_id = INVALID_SOURCE);
+	CargoPacket(StationID source, TileIndex source_xy, uint16 count, SourceType source_type, SourceID source_id, TileIndex dest_xy = INVALID_TILE, SourceType dest_type = ST_INDUSTRY, SourceID dest_id = INVALID_SOURCE, OrderID next_order = INVALID_ORDER, StationID next_station = INVALID_STATION, byte flags = 0);
+	CargoPacket(uint16 count, byte days_in_transit, StationID source, TileIndex source_xy, TileIndex loaded_at_xy, Money feeder_share = 0, SourceType source_type = ST_INDUSTRY, SourceID source_id = INVALID_SOURCE, TileIndex dest_xy = INVALID_TILE, SourceType dest_type = ST_INDUSTRY, SourceID dest_id = INVALID_SOURCE, OrderID next_order = INVALID_ORDER, StationID next_station = INVALID_STATION, byte flags = 0);
 
 	/** Destroy the packet. */
 	~CargoPacket() { }
@@ -140,6 +150,59 @@ public:
 		return this->loaded_at_xy;
 	}
 
+	/**
+	 * Gets the coordinates of the cargo's destination.
+	 * @return The destination tile.
+	 */
+	inline TileIndex DestinationXY() const
+	{
+		return this->dest_xy;
+	}
+
+	/**
+	 * Gets the ID of the destination of the cargo.
+	 * @return The destination ID.
+	 */
+	inline SourceID DestinationID() const
+	{
+		return this->dest_id;
+	}
+
+	/**
+	 * Gets the type of the destination of the cargo.
+	 * @return The destination type.
+	 */
+	inline SourceType DestinationType() const
+	{
+		return this->dest_type;
+	}
+
+	/**
+	 * Gets the routing behaviour flags of this packet.
+	 * @return The routing flags.
+	 */
+	inline byte Flags() const
+	{
+		return this->flags;
+	}
+
+	/**
+	 * Gets the order ID of the next desired hop.
+	 * @return The order ID of the next desired hop.
+	 */
+	inline OrderID NextHop() const
+	{
+		return this->next_order;
+	}
+
+	/**
+	 * Gets the station ID where the packet should be unloaded next.
+	 * @return The station ID where the packet should be unloaded.
+	 */
+	inline StationID NextStation() const
+	{
+		return this->next_station;
+	}
 
 	static void InvalidateAllFrom(SourceType src_type, SourceID src);
 	static void InvalidateAllFrom(StationID sid);
@@ -179,7 +242,10 @@ public:
 		MTA_CARGO_LOAD,     ///< Load the packet onto a vehicle, i.e. set the last loaded station ID.
 		MTA_TRANSFER,       ///< The cargo is moved as part of a transfer.
 		MTA_UNLOAD,         ///< The cargo is moved as part of a forced unload.
+		MTA_NO_ACTION,      ///< The station doesn't accept the cargo, so do nothing (only applicable to cargo without destination)
 	};
+
+	friend bool CargodestModeChanged(int32 p1);
 
 protected:
 	uint count;                 ///< Cache for the number of cargo entities.
@@ -191,11 +257,18 @@ protected:
 
 	void RemoveFromCache(const CargoPacket *cp);
 
+	void RemoveFromCacheLocal(const CargoPacket *cp, uint amount) {}
+
+	virtual bool UpdateCargoNextHop(CargoPacket *cp, Station *st, CargoID cid)
+	{
+		return true;
+	}
+
 public:
 	/** Create the cargo list. */
 	CargoList() {}
 
-	~CargoList();
+	virtual ~CargoList();
 
 	void OnCleanPool();
 
@@ -249,7 +322,7 @@ public:
 	void Truncate(uint max_remaining);
 
 	template <class Tother_inst>
-	bool MoveTo(Tother_inst *dest, uint count, MoveToAction mta, CargoPayment *payment, uint data = 0);
+	bool MoveTo(Tother_inst *dest, uint count, MoveToAction mta, CargoPayment *payment, StationID st = INVALID_STATION, OrderID cur_order = INVALID_ORDER, CargoID cid = INVALID_CARGO, bool *did_transfer = NULL);
 
 	void InvalidateCache();
 };
@@ -286,6 +359,8 @@ public:
 
 	void InvalidateCache();
 
+	void InvalidateNextStation();
+
 	/**
 	 * Are two the two CargoPackets mergeable in the context of
 	 * a list of CargoPackets for a Vehicle?
@@ -299,7 +374,13 @@ public:
 				cp1->days_in_transit == cp2->days_in_transit &&
 				cp1->source_type     == cp2->source_type &&
 				cp1->source_id       == cp2->source_id &&
-				cp1->loaded_at_xy    == cp2->loaded_at_xy;
+				cp1->loaded_at_xy    == cp2->loaded_at_xy &&
+				cp1->dest_xy         == cp2->dest_xy &&
+				cp1->dest_type       == cp2->dest_type &&
+				cp1->dest_id         == cp2->dest_id &&
+				cp1->next_order      == cp2->next_order &&
+				cp1->next_station    == cp2->next_station &&
+				cp1->flags           == cp2->flags;
 	}
 };
 
@@ -308,10 +389,50 @@ public:
  */
 class StationCargoList : public CargoList<StationCargoList> {
 public:
+	typedef std::map<OrderID, int> OrderMap;
+
+protected:
+	/** The (direct) parent of this class. */
+	typedef CargoList<StationCargoList> Parent;
+
+	OrderMap order_cache;
+	uint32 next_start;        ///< Packet number to start the next hop update loop from.
+
+	void AddToCache(const CargoPacket *cp);
+	void RemoveFromCache(const CargoPacket *cp);
+	void RemoveFromCacheLocal(const CargoPacket *cp, uint amount);
+
+	/* virtual */ bool UpdateCargoNextHop(CargoPacket *cp, Station *st, CargoID cid);
+
+public:
 	/** The super class ought to know what it's doing. */
 	friend class CargoList<StationCargoList>;
 	/** The stations, via GoodsEntry, have a CargoList. */
 	friend const struct SaveLoad *GetGoodsDesc();
+
+	void InvalidateCache();
+
+	void UpdateCargoNextHop(Station *st, CargoID cid);
+
+	/**
+	 * Gets the cargo counts per next hop.
+	 * @return Cargo counts.
+	 */
+	const OrderMap& CountForNextHop() const
+	{
+		return this->order_cache;
+	}
+
+	/**
+	 * Gets the cargo count for a next hop.
+	 * @param order The next hop.
+	 * @return The cargo count for the specified next hop.
+	 */
+	int CountForNextHop(OrderID order) const
+	{
+		OrderMap::const_iterator i = this->order_cache.find(order);
+		return i != this->order_cache.end() ? i->second : 0;
+	}
 
 	/**
 	 * Are two the two CargoPackets mergeable in the context of
@@ -325,8 +446,17 @@ public:
 		return cp1->source_xy    == cp2->source_xy &&
 				cp1->days_in_transit == cp2->days_in_transit &&
 				cp1->source_type     == cp2->source_type &&
-				cp1->source_id       == cp2->source_id;
+				cp1->source_id       == cp2->source_id &&
+				cp1->dest_xy         == cp2->dest_xy &&
+				cp1->dest_type       == cp2->dest_type &&
+				cp1->dest_id         == cp2->dest_id &&
+				cp1->next_order      == cp2->next_order &&
+				cp1->next_station    == cp2->next_station &&
+				cp1->flags           == cp2->flags;
 	}
+
+	static void InvalidateAllTo(OrderID order, StationID st_unload);
+	static void InvalidateAllTo(SourceType type, SourceID dest);
 };
 
 #endif /* CARGOPACKET_H */

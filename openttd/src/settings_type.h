@@ -76,6 +76,7 @@ struct GUISettings {
 	uint8  order_review_system;              ///< perform order reviews on vehicles
 	bool   vehicle_income_warn;              ///< if a vehicle isn't generating income, show a warning
 	bool   show_finances;                    ///< show finances at end of year
+	uint8  specific_group_name;              ///< use station or town names for specific group names
 	bool   sg_new_nonstop;                   ///< ttdpatch compatible nonstop handling read from pre v93 savegames
 	bool   new_nonstop;                      ///< ttdpatch compatible nonstop handling
 	uint8  stop_location;                    ///< what is the default stop location of trains?
@@ -106,15 +107,39 @@ struct GUISettings {
 	uint8  date_format_in_default_names;     ///< should the default savegame/screenshot name use long dates (31th Dec 2008), short dates (31-12-2008) or ISO dates (2008-12-31)
 	byte   max_num_autosaves;                ///< controls how many autosavegames are made before the game starts to overwrite (names them 0 to max_num_autosaves - 1)
 	bool   population_in_label;              ///< show the population of a town in his label?
+	bool   forecast_display;                 ///< show the supply and demand forecasting on station building
 	uint8  right_mouse_btn_emulation;        ///< should we emulate right mouse clicking?
 	uint8  scrollwheel_scrolling;            ///< scrolling using the scroll wheel?
 	uint8  scrollwheel_multiplier;           ///< how much 'wheel' per incoming event from the OS?
+	bool   show_vehicle_route_stopovers;     ///< when a window related to a specific vehicle is focused, show the stopovers on map
+	uint32 show_vehicle_route_path;          ///< show a vehicle's path when its orders/timetable window is focused
 	bool   timetable_arrival_departure;      ///< show arrivals and departures in vehicle timetables
+	uint8  max_departures;                   ///< maximum number of departures to show per station
+	uint16 max_departure_time;               ///< maximum time in advance to show departures
+	uint16 departure_calc_frequency;         ///< how often to calculate departures (in ticks)
+	bool   departure_show_vehicle;           ///< whether to show vehicle names with departures
+	bool   departure_show_group;             ///< whether to show group names with departures
+	bool   departure_show_company;           ///< whether to show company names with departures
+	bool   departure_show_vehicle_type;      ///< whether to show vehicle type icons with departures
+	bool   departure_show_vehicle_color;     ///< whether to show vehicle type icons in silver instead of orange
+	bool   departure_larger_font;            ///< whether to show the calling at list in a larger font
+	bool   departure_destination_type;       ///< whether to show destination types for ports and airports
+	bool   departure_show_both;              ///< whether to show departure and arrival times on the same line
+	bool   departure_only_passengers;        ///< whether to only show passenger services
+	bool   departure_smart_terminus;         ///< whether to only show passenger services
+	uint8  departure_conditionals;           ///< how to handle conditional orders
+	bool   departure_show_all_stops;         ///< whether to show stops regardless of loading/unloading done at them
+	bool   departure_merge_identical;        ///< whether to merge identical departures
 	bool   left_mouse_btn_scrolling;         ///< left mouse button scroll
 	bool   pause_on_newgame;                 ///< whether to start new games paused or not
 	bool   enable_signal_gui;                ///< show the signal GUI when the signal button is pressed
 	Year   coloured_news_year;               ///< when does newspaper become coloured?
 	bool   timetable_in_ticks;               ///< whether to show the timetable in ticks rather than days
+	bool   time_in_minutes;                  ///< whether to use the hh:mm conversion when printing dates
+	bool   timetable_start_text_entry;       ///< whether to enter timetable start times as text (hhmm format)
+	uint8  ticks_per_minute;                 ///< how many ticks per minute
+	uint8  date_with_time;                   ///< whether to show the month and year with the time
+	uint16 clock_offset;                     ///< clock offset in minutes
 	bool   quick_goto;                       ///< Allow quick access to 'goto button' in vehicle orders window
 	bool   auto_euro;                        ///< automatically switch to euro in 2002
 	byte   drag_signals_density;             ///< many signals density
@@ -172,6 +197,7 @@ struct SoundSettings {
 	bool   disaster;                         ///< Play disaster and accident sounds.
 	bool   vehicle;                          ///< Play vehicle sound effects.
 	bool   ambient;                          ///< Play ambient, industry and town sounds.
+	bool   cashtill;                          ///< Play ambient, industry and town sounds.
 };
 
 /** Settings related to music. */
@@ -267,8 +293,8 @@ struct GameCreationSettings {
 	uint8  map_y;                            ///< Y size of map
 	byte   land_generator;                   ///< the landscape generator
 	byte   oil_refinery_limit;               ///< distance oil refineries allowed from map edge
-	byte   snow_line_height;                 ///< a number 0-15 that configured snow line height
-	byte   tgen_smoothness;                  ///< how rough is the terrain from 0-3
+	byte   snow_line_height;                 ///< a number 0-255 that configured snow line height
+	byte   tgen_smoothness;                  ///< how rough is the terrain from 0-6
 	byte   tree_placer;                      ///< the tree placer algorithm
 	byte   heightmap_rotation;               ///< rotation director for the heightmap
 	byte   se_flat_world_height;             ///< land height a flat world gets in SE
@@ -285,8 +311,12 @@ struct GameCreationSettings {
 
 /** Settings related to construction in-game */
 struct ConstructionSettings {
+	uint8  max_heightlevel;                  ///< maximal allowed heightlevel
 	bool   build_on_slopes;                  ///< allow building on slopes
 	bool   autoslope;                        ///< allow terraforming under things
+	bool   enable_land_buying;               ///< allow any land buying.
+	bool   enable_restrictive_land_buying;   ///< enable restriction on drag and drop land buying.
+	uint8  drag_drop_land_buying_limit;      ///< allow the use of dragging and dropping to buy land.
 	uint16 max_bridge_length;                ///< maximum length of bridges
 	uint16 max_tunnel_length;                ///< maximum length of tunnels
 	byte   train_signal_side;                ///< show signals on left / driving / right side
@@ -296,8 +326,11 @@ struct ConstructionSettings {
 	uint8  raw_industry_construction;        ///< type of (raw) industry construction (none, "normal", prospecting)
 	uint8  industry_platform;                ///< the amount of flat land around an industry
 	bool   freeform_edges;                   ///< allow terraforming the tiles at the map edges
+	bool   snow_in_temperate;                ///< enable snow in temperate
 	uint8  extra_tree_placement;             ///< (dis)allow building extra trees in-game
+        uint8  tree_growth_rate;                 ///< tree growth rate
 	uint8  command_pause_level;              ///< level/amount of commands that can't be executed while paused
+	uint8  clipboard_capacity;              ///< maximum copy/paste area size (width/height)
 
 	uint32 terraform_per_64k_frames;         ///< how many tile heights may, over a long period, be terraformed per 65536 frames?
 	uint16 terraform_frame_burst;            ///< how many tile heights may, over a short period, be terraformed?
@@ -305,6 +338,13 @@ struct ConstructionSettings {
 	uint16 clear_frame_burst;                ///< how many tiles may, over a short period, be cleared?
 	uint32 tree_per_64k_frames;              ///< how many trees may, over a long period, be planted per 65536 frames?
 	uint16 tree_frame_burst;                 ///< how many trees may, over a short period, be planted?
+
+	bool traffic_lights;                     ///< Whether traffic lights are enabled.
+	bool towns_build_traffic_lights;         ///< Whether towns build traffic lights during road construction.
+	bool allow_building_tls_in_towns;        ///< Whether the players are allowed to build traffic lights on town owned roads.
+	uint8 traffic_lights_green_phase;        ///< How long traffic lights' green phase lasts.
+	uint8 max_tlc_size;                      ///< Maximum size for traffic light consists.
+	uint8 max_tlc_distance;                  ///< Maximum distance between traffic lights for synchronising them.
 };
 
 /** Settings related to the AI. */
@@ -352,6 +392,8 @@ struct NPFSettings {
 	uint32 npf_road_curve_penalty;           ///< the penalty for curves
 	uint32 npf_crossing_penalty;             ///< the penalty for level crossings
 	uint32 npf_road_drive_through_penalty;   ///< the penalty for going through a drive-through road stop
+	uint32 npf_road_two_way_penalty;         ///< The penalty for two-way road
+	uint32 npf_road_trafficlight_penalty;    ///< Penalty for junctions with traffic lights.
 	uint32 npf_road_dt_occupied_penalty;     ///< the penalty multiplied by the fill percentage of a drive-through road stop
 	uint32 npf_road_bay_occupied_penalty;    ///< the penalty multiplied by the fill percentage of a road bay
 };
@@ -368,6 +410,8 @@ struct YAPFSettings {
 	uint32 road_curve_penalty;               ///< penalty for curves
 	uint32 road_crossing_penalty;            ///< penalty for level crossing
 	uint32 road_stop_penalty;                ///< penalty for going through a drive-through road stop
+	uint32 road_two_way_penalty;             ///< penalty for two way road
+	uint32 road_trafficlight_penalty;        ///< Penalty for junctions with traffic lights.	
 	uint32 road_stop_occupied_penalty;       ///< penalty multiplied by the fill percentage of a drive-through road stop
 	uint32 road_stop_bay_occupied_penalty;   ///< penalty multiplied by the fill percentage of a road bay
 	bool   rail_firstred_twoway_eol;         ///< treat first red two-way signal as dead end
@@ -394,6 +438,14 @@ struct YAPFSettings {
 	uint32 rail_longer_platform_per_tile_penalty;  ///< penalty for longer  station platform than train (per tile)
 	uint32 rail_shorter_platform_penalty;          ///< penalty for shorter station platform than train
 	uint32 rail_shorter_platform_per_tile_penalty; ///< penalty for shorter station platform than train (per tile)
+
+	uint32 route_transfer_cost;              ///< penalty for transferring to a different vehicle
+	uint32 route_max_transfers;              ///< maximum number of allowed transfers
+	uint16 route_distance_factor;            ///< factor for the link length
+	uint16 route_travel_time_factor;         ///< factor * CYapfCostRouteLinkT::PENALTY_DIVISOR (=16) for the link travel time
+	uint16 route_station_last_veh_factor;    ///< factor * CYapfCostRouteLinkT::PENALTY_DIVISOR (=16) for the time since the last vehicle arrived at a station
+	uint16 route_station_waiting_factor;     ///< factor * CYapfCostRouteLinkT::PENALTY_DIVISOR (=16) for the waiting cargo at a station
+	byte   route_mode_cost_factor[4];        ///< vehicle type dependent factor for the link length
 };
 
 /** Settings related to all pathfinders. */
@@ -413,6 +465,12 @@ struct PathfinderSettings {
 	bool   reserve_paths;                    ///< always reserve paths regardless of signal type.
 	byte   wait_for_pbs_path;                ///< how long to wait for a path reservation.
 	byte   path_backoff_interval;            ///< ticks between checks for a free path.
+	
+	bool   yellow_pbs;                       ///< use yellow path signals with extended path reservation
+	uint16 yellow_speed;                     ///< maximum yellow signal speed
+	uint16 double_yellow_speed;              ///< maximum double yellow signal speed
+	bool   watch_next_signal;                ///< use color speed limit from next signal, if it's bigger than current
+	bool   slow_down_station;                ///< when entering station, make last pbs green instead of yellow
 
 	OPFSettings  opf;                        ///< pathfinder settings for the old pathfinder
 	NPFSettings  npf;                        ///< pathfinder settings for the new pathfinder
@@ -425,6 +483,7 @@ struct OrderSettings {
 	bool   gradual_loading;                  ///< load vehicles gradually
 	bool   selectgoods;                      ///< only send the goods to station if a train has been there
 	bool   no_servicing_if_no_breakdowns;    ///< don't send vehicles to depot when breakdowns are disabled
+	bool   automatic_timetable_separation;   ///< Enable automatic separation of vehicles in the timetable.
 	bool   serviceathelipad;                 ///< service helicopters at helipads automatically (no need to send to depot)
 };
 
@@ -448,7 +507,44 @@ struct VehicleSettings {
 	bool   never_expire_vehicles;            ///< never expire vehicles
 	byte   extend_vehicle_life;              ///< extend vehicle life by this many years
 	byte   road_side;                        ///< the side of the road vehicles drive on
+       bool limit_vehicle_speed_in_towns;       ///< limit vehicle speed in towns
+       uint16 max_veh_speed_in_towns_two_way;   ///< max speed of vehicle in towns on two-way road
+       uint16 max_veh_speed_in_towns_one_way;   ///< max speed of vehicle in towns on one-way road
+       bool limit_vehicle_speed_outside_towns;  ///< limit vehicle speed outside towns
+       uint16 max_veh_speed_out_towns_two_way;  ///< max speed of vehicle outside towns on two-way road
+       uint16 max_veh_speed_out_towns_one_way;  ///< max speed of vehicle outside towns on one-way road
+       bool limit_vehicle_speed_tunnel_bridge;  ///< limit vehicle speed on bridge and in tunnel
+       uint16 max_veh_speed_tunnel_bridge;      ///< max speed of vehicle on bridge and in tunnel
+       bool limit_vehicle_speed_in_curves;      ///< limit vehicle speed in curves
 	uint8  plane_crashes;                    ///< number of plane crashes, 0 = none, 1 = reduced, 2 = normal
+	bool   repair_cost;
+};
+
+/** Settings related to cargo destinations. */
+struct CargodestSettings {
+	uint8  mode_pax_mail;                    ///< routing mode for cargoes with TE_PASSENGERS or TE_MAIL
+	uint8  mode_town_cargo;                  ///< routing mode for cargoes with other town effects
+	uint8  mode_others;                      ///< routing mode for all other cargoes
+	uint8  base_town_links[2];               ///< minimum number of town demand links for (0=#BASE_TOWN_LINKS) all cargoes except (1=#BASE_TOWN_LINKS_SYMM) symmetric cargoes
+	uint8  base_ind_links[3];                ///< minimum number of industry demand links for (0=#BASE_IND_LINKS) all cargoes except (1=#BASE_IND_LINKS_TOWN) town cargoes and (2=#BASE_IND_LINKS_SYMM) symmetric cargoes
+	uint8  city_town_links;                  ///< additional number of links for cities
+	uint8  town_chances_town[4];             ///< chances a link from a town to a town has a specific destination class (@see FindTownDestination)
+	uint8  town_chances_city[4];             ///< chances a link from a city to a town has a specific destination class (@see FindTownDestination)
+	uint8  ind_chances[3];                   ///< chances a link to an industry has a specific destination class (@see FindIndustryDestination)
+	uint8  random_dest_chance;               ///< percentage for traffic with random destination
+	uint32 big_town_pop[2];                  ///< (0=#BIG_TOWN_POP_MAIL) mail, (1=#BIG_TOWN_POP_PAX) passenger amount to count as a big town
+	uint16 pop_scale_town[4];                ///< population/cargo amount scale divisor for (0=#SCALE_TOWN) all cargoes (1=#SCALE_TOWN_BIG) for big towns except (2=#SCALE_TOWN_PAX) passengers (3=#SCALE_TOWN_BIG_PAX) for big towns
+	uint16 cargo_scale_ind[2];               ///< cargo amount scale divisor for (0=#CARGO_SCALE_IND) all cargoes except (1=#CARGO_SCALE_IND_TOWN) town cargoes
+	uint16 min_weight_town[2];               ///< minimum link weight for (0=MIN_WEIGHT_TOWN) all cargoes except (1=MIN_WEIGHT_TOWN_PAX) passengers
+	uint16 min_weight_ind;                   ///< minimum link weight for industry links
+	uint16 weight_scale_town[4];             ///< weight scale divisor for (0=#SCALE_TOWN) all cargoes (1=#SCALE_TOWN_BIG) for big towns except (2=#SCALE_TOWN_PAX) passengers (3=#SCALE_TOWN_BIG_PAX) for big towns
+	uint16 weight_scale_ind[2];              ///< weight scale divisor for (0=#WEIGHT_SCALE_IND_PROD) produced cargo (1=#WEIGHT_SCALE_IND_PILE) stockpiled cargo
+	uint32 town_nearby_dist;                 ///< squared distance (on a 256x256 map) inside which a town is considered nearby
+	uint32 ind_nearby_dist;                  ///< squared distance (on a 256x256 map) inside which an industry is considered nearby
+	uint16 max_route_age;                    ///< maximum days since the last vehicle traveled a link until link expiration
+	uint16 route_recalc_delay;               ///< delay in ticks between recalculating the next hop of cargo packets
+	uint16 route_recalc_chunk;               ///< maximum amount of cargo packets to recalculate in one step
+	uint16 max_route_penalty[2];             ///< maximum penalty factor based on distance, (1) base value, (2) random additional span
 };
 
 /** Settings related to the economy. */
@@ -464,6 +560,7 @@ struct EconomySettings {
 	bool   fund_roads;                       ///< allow funding local road reconstruction
 	bool   give_money;                       ///< allow giving other companies money
 	bool   mod_road_rebuild;                 ///< roadworks remove unnecessary RoadBits
+    bool   town_construction_cost;           ///< Increase construction costs the closer you get to a town/city center
 	bool   multiple_industry_per_town;       ///< allow many industries of the same type per town
 	uint8  town_growth_rate;                 ///< town growth rate
 	uint8  larger_towns;                     ///< the number of cities to build. These start off larger and grow twice as fast
@@ -473,8 +570,25 @@ struct EconomySettings {
 	TownFoundingByte found_town;             ///< town founding, @see TownFounding
 	bool   station_noise_level;              ///< build new airports when the town noise level is still within accepted limits
 	uint16 town_noise_population[3];         ///< population to base decision on noise evaluation (@see town_council_tolerance)
+	bool   infrastructure_sharing[4];        ///< enable infrastructure sharing for rail/road/water/air
+	uint   sharing_fee[4];                   ///< fees for infrastructure sharing for rail/road/water/air
+	bool   sharing_payment_in_debt;          ///< allow fee payment for companies with more loan than money (switch off to prevent MP exploits)
+	uint8 random_road_construction;          ///< Chance for towns to start random road construction
 	bool   allow_town_level_crossings;       ///< towns are allowed to build level crossings
+	int8   town_cargo_factor;                ///< power-of-two multiplier for town (passenger, mail) generation. May be negative.
+	bool   lost_cargo;                       ///< lost cargo generates lost money
 	bool   infrastructure_maintenance;       ///< enable monthly maintenance fee for owner infrastructure
+       uint8  day_length_factor;                ///< factor which the day length is multiplied (74 default ticks * setting)
+       uint8  day_length_balance_type;          ///< way of balancing day length
+       uint8  day_length_balance_factor;        ///< factor which parts of economy is modified
+       bool   include_prop_main_to_run;         ///< property maintenance will be multiplied with balance type running costs, not just all costs
+       bool   include_loan_int_to_run;          ///< loan interests will be multiplied with balance type running costs, not just all costs
+       bool   slow_down_veh_rel_drop_down;      ///< vehicles reliability will drop down per game year same apart day length
+       bool   slow_down_town_growth;            ///< towns will grow the same per each game year apart day length
+       bool   slow_down_production;             ///< towns will grow the same per each game year apart day length
+       bool   show_orig_productions;            ///< industry will show original production
+	bool   yearly_tax;                       ///< Whether to be taxes for companies
+	CargodestSettings cargodest;             ///< settings related to cargo destinations
 };
 
 /** Settings related to stations. */
@@ -484,6 +598,7 @@ struct StationSettings {
 	bool   distant_join_stations;            ///< allow to join non-adjacent stations
 	bool   never_expire_airports;            ///< never expire airports
 	byte   station_spread;                   ///< amount a station may spread
+	bool   advanced_control;
 };
 
 /** Default settings for vehicles. */

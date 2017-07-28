@@ -250,4 +250,118 @@ static inline bool IsDiagonalDirection(Direction dir)
 	return (dir & 1) != 0;
 }
 
+/**
+ * Checks if an integer value is a valid DirTransformation.
+ *
+ * @param transformation The value to check.
+ * @return True if the value belongs to a DirTransformation, false otherwise.
+ */
+static inline bool IsValidDirTransform(DirTransformation transformation)
+{
+	return IsInsideMM(transformation, DTR_BEGIN, DTR_END);
+}
+
+/**
+ * Combine two direction transformations into one.
+ * @param a First transformation.
+ * @param b Second transformation.
+ * @return Transformation that works like firstly applying the 'a' transformation and then the 'b' transformation.
+ */
+static inline DirTransformation CombineDirTransform(DirTransformation a, DirTransformation b)
+{
+	/* DirTransformation bit lauout:
+	 *     0000irrr
+	 * where:
+	 *     i - DTR_REFLECTION_BIT
+	 *     rrr - DTR_ROTATION_MASK
+	 *
+	 * DirTransformation transformation can be expressed as a function of an angle:
+	 *   f(x) = I * x + R
+	 * where
+	 *   x - direction expressed in angle units (e.g. DiagDir)
+	 *   I - reflection, -1 to reflect before rotating (DTR_REFLECTION_BIT set), +1 otherwise
+	 *   R - rotation, number of angle units to add (bits of mask DTR_ROTATION_MASK)
+	 *
+	 * 1 angle unit is 90 degree. As we work on angles we must use modular arithmetic for
+	 * calculations. Modulus is 4 because 360 degree is 4 our angle units. To apply
+	 * modulus we can simply bitmask result with DTR_ROTATION_MASK.
+	 *
+	 * To combine two transformations
+	 *   a(x) = IA * x + RA
+	 *   b(x) = IB * x + RB
+	 * into one
+	 *   c(x) = IC * x + RC
+	 * we must compose functions
+	 *   c(x) = b(a(x)) = IB * (IA * x + RA) + RB = IA * IB * x + IB * RA + RB
+	 * From above
+	 *   IC = IA * IB         - so we can XOR reflection bits together to get resulting reflection bit
+	 *   RC = IB * RA + RB    - so we evaluate RB+RA or RB-RA based on reflection bit of transformation B to get resulting rotation bits */
+	return (DirTransformation)(((a ^ b) & DTR_REFLECTION_BIT) | // calculate reflection bit
+		(((b & DTR_REFLECTION_BIT) ? (b - a) : (b + a)) & DTR_ROTATION_MASK)); // calculate rotation bits
+}
+
+/**
+ * Invert given transformation.
+ * @param transformation Tranformation to invert.
+ * @return Inverted transformation transformation.
+ */
+static inline DirTransformation InvertDirTransform(DirTransformation transformation)
+{
+	/* to revert a reflection reflect again, transformation is the same (involution) */
+	if (transformation & DTR_REFLECTION_BIT) return transformation;
+
+	/* to revert a rotation rotate in opposite direction */
+	return (DirTransformation)((-transformation) & DTR_ROTATION_MASK);
+}
+
+static inline DirTransformation DirRotation(DiagDirDiff angle)
+{
+	return (DirTransformation)angle;
+}
+
+static inline DirTransformation DirReflection(Direction axis)
+{
+	return (DirTransformation)(((axis - DiagDirToDir(DIAGDIR_BEGIN)) & DTR_ROTATION_MASK) | DTR_REFLECTION_BIT);
+}
+
+static inline DirTransformation DirReflection(Axis axis)
+{
+	return (DirTransformation)((2 * axis) | DTR_REFLECTION_BIT);
+}
+
+/**
+ * Transform Axis by a given transformation.
+ * @param axis Axis to transform.
+ * @param transformation Transformation to use.
+ * @return Transformed Axis.
+ */
+static inline Axis TransformAxis(Axis axis, DirTransformation transformation)
+{
+	return (Axis)(axis ^ (transformation & 1));
+}
+
+/**
+ * Transform Direction by given transformation.
+ * @param direction Direction to transform.
+ * @param transformation Transformation to use.
+ * @return Transformed Direction.
+ */
+static inline Direction TransformDir(Direction direction, DirTransformation transformation)
+{
+	if (transformation & DTR_REFLECTION_BIT) direction = (Direction)(2 * DIR_NE - direction); // reflect against X-axis
+	return ChangeDir(direction, (DirDiff)(2 * transformation)); // rotate and cut off overflowing bits
+}
+
+/**
+ * Transform DiagDirection by a given transformation.
+ * @param diag_dir DiagDirection to transform.
+ * @param transformation Transformation to use.
+ * @return Transformed DiagDirection.
+ */
+static inline DiagDirection TransformDiagDir(DiagDirection diag_dir, DirTransformation transformation)
+{
+	if (transformation & DTR_REFLECTION_BIT) diag_dir = (DiagDirection)(2 * DIAGDIR_NE - diag_dir); // reflect against X-axis
+	return ChangeDiagDir(diag_dir, (DiagDirDiff)transformation); // rotate and cut off overflowing bits
+}
+
 #endif /* DIRECTION_FUNC_H */

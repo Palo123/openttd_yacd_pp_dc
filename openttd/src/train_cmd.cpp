@@ -32,13 +32,18 @@
 #include "core/random_func.hpp"
 #include "company_base.h"
 #include "newgrf.h"
+#include "infrastructure_func.h"
 #include "order_backup.h"
 #include "zoom_func.h"
+#include "cargodest_func.h"
 
 #include "table/strings.h"
 #include "table/train_cmd.h"
 
-static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, TrackBits tracks, bool force_res, bool *got_reservation, bool mark_stuck);
+#include "engine_func.h" //MYGUI
+
+static void ExtendYellowReservation(Train *v, TileIndex old_tile, Trackdir old_trackdir, byte *nof_extends);
+static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, TrackBits tracks, bool force_res, bool *got_reservation, bool mark_stuck, byte nof_extends = 1);
 static bool TrainCheckIfLineEnds(Train *v, bool reverse = true);
 bool TrainController(Train *v, Vehicle *nomove, bool reverse = true); // Also used in vehicle_sl.cpp.
 static TileIndex TrainApproachingCrossingTile(const Train *v);
@@ -156,6 +161,8 @@ void Train::ConsistChanged(bool same_length)
 		u->InvalidateNewGRFCache();
 	}
 
+	uint32 cargo_mask = 0;
+
 	for (Train *u = this; u != NULL; u = u->Next()) {
 		const Engine *e_u = u->GetEngine();
 		const RailVehicleInfo *rvi_u = &e_u->u.rail;
@@ -200,7 +207,9 @@ void Train::ConsistChanged(bool same_length)
 			}
 		}
 
+		/* Store carried cargo. */
 		u->cargo_cap = e_u->DetermineCapacity(u);
+		if (u->cargo_type != INVALID_CARGO && u->cargo_cap > 0) SetBit(cargo_mask, u->cargo_type);
 		u->vcache.cached_cargo_age_period = GetVehicleProperty(u, PROP_TRAIN_CARGO_AGE_PERIOD, e_u->info.cargo_age_period);
 
 		/* check the vehicle length (callback) */
@@ -231,6 +240,7 @@ void Train::ConsistChanged(bool same_length)
 	}
 
 	/* store consist weight/max speed in cache */
+	this->vcache.cached_cargo_mask = cargo_mask;
 	this->vcache.cached_max_speed = max_speed;
 	this->tcache.cached_tilt = train_can_tilt;
 	this->tcache.cached_max_curve_speed = this->GetCurveSpeedLimit();
@@ -240,7 +250,7 @@ void Train::ConsistChanged(bool same_length)
 
 	if (this->IsFrontEngine()) {
 		this->UpdateAcceleration();
-		SetWindowDirty(WC_VEHICLE_DETAILS, this->index);
+		if ( !HasBit(this->subtype, GVSF_VIRTUAL) ) SetWindowDirty(WC_VEHICLE_DETAILS, this->index);
 		InvalidateWindowData(WC_VEHICLE_REFIT, this->index, VIWD_CONSIST_CHANGED);
 		InvalidateWindowData(WC_VEHICLE_ORDERS, this->index, VIWD_CONSIST_CHANGED);
 	}
@@ -375,6 +385,10 @@ int Train::GetCurrentMaxSpeed() const
 			this->gcache.cached_max_track_speed :
 			this->tcache.cached_max_curve_speed;
 
+	if (_settings_game.pf.yellow_pbs) {		
+		max_speed = min(max_speed, this->max_signal_speed);
+	}
+
 	if (_settings_game.vehicle.train_acceleration_model == AM_REALISTIC && IsRailStationTile(this->tile)) {
 		StationID sid = GetStationIndex(this->tile);
 		if (this->current_order.ShouldStopAtStation(this, sid)) {
@@ -447,6 +461,7 @@ int Train::GetDisplayImageWidth(Point *offset) const
 		offset->x = reference_width / 2;
 		offset->y = vehicle_pitch;
 	}
+	//printf("  refwid:%d  gdiw.cachedvehlen(%d):%d  ", reference_width, this->engine_type, this->gcache.cached_veh_length);
 	return this->gcache.cached_veh_length * reference_width / VEHICLE_LENGTH;
 }
 
@@ -1111,6 +1126,8 @@ static void NormaliseTrainHead(Train *head)
 	/* Not a front engine, i.e. a free wagon chain. No need to do more. */
 	if (!head->IsFrontEngine()) return;
 
+	PrefillRouteLinks(head);
+
 	/* Update the refit button and window */
 	InvalidateWindowData(WC_VEHICLE_REFIT, head->index, VIWD_CONSIST_CHANGED);
 	SetWindowWidgetDirty(WC_VEHICLE_VIEW, head->index, WID_VV_REFIT);
@@ -1128,6 +1145,7 @@ static void NormaliseTrainHead(Train *head)
  * @param p1 various bitstuffed elements
  * - p1 (bit  0 - 19) source vehicle index
  * - p1 (bit      20) move all vehicles following the source vehicle
+ * - p1 (bit	  21) this is a virtual vehicle (for creating TemplateVehicles) MYGUI
  * @param p2 what wagon to put the source wagon AFTER, XXX - INVALID_VEHICLE to make a new line
  * @param text unused
  * @return the cost of this operation or an error
@@ -1147,7 +1165,7 @@ CommandCost CmdMoveRailVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, u
 	/* Do not allow moving crashed vehicles inside the depot, it is likely to cause asserts later */
 	if (src->vehstatus & VS_CRASHED) return CMD_ERROR;
 
-	/* if nothing is selected as destination, try and find a matching vehicle to drag to. */
+	/* if nothing is selected as destination, try and find a m1atching vehicle to drag to. */
 	Train *dst;
 	if (d == INVALID_VEHICLE) {
 		dst = src->IsEngine() ? NULL : FindGoodVehiclePos(src);
@@ -1192,10 +1210,14 @@ CommandCost CmdMoveRailVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, u
 	if (!move_chain && dst != NULL && dst->IsRearDualheaded() && src == dst->other_multiheaded_part) return CommandCost();
 
 	/* Check if all vehicles in the source train are stopped inside a depot. */
-	if (!src_head->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAINS_CAN_ONLY_BE_ALTERED_INSIDE_A_DEPOT);
+	/* Do this check only if the vehicle to be moved is non-virtual */ //MYGUI
+	if ( !HasBit(p1, 21) )
+		if (!src_head->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAINS_CAN_ONLY_BE_ALTERED_INSIDE_A_DEPOT);
 
 	/* Check if all vehicles in the destination train are stopped inside a depot. */
-	if (dst_head != NULL && !dst_head->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAINS_CAN_ONLY_BE_ALTERED_INSIDE_A_DEPOT);
+	/* Do this check only if the destination vehicle is non-virtual */ //MYGUI
+	if ( !HasBit(p1, 21) )
+		if (dst_head != NULL && !dst_head->IsStoppedInDepot()) return_cmd_error(STR_ERROR_TRAINS_CAN_ONLY_BE_ALTERED_INSIDE_A_DEPOT);
 
 	/* First make a backup of the order of the trains. That way we can do
 	 * whatever we want with the order and later on easily revert. */
@@ -1297,9 +1319,15 @@ CommandCost CmdMoveRailVehicle(TileIndex tile, DoCommandFlag flags, uint32 p1, u
 			CheckCargoCapacity(dst_head);
 		}
 
+		/* Pre-fill route links after adding a vehicle. */
+		if (dst_head != NULL && dst_head->IsFrontEngine()) PrefillRouteLinks(dst_head);
+
 		/* We are undoubtedly changing something in the depot and train list. */
-		InvalidateWindowData(WC_VEHICLE_DEPOT, src->tile);
-		InvalidateWindowClassesData(WC_TRAINS_LIST, 0);
+		/* But only if the moved vehicle is not virtual */ // MYGUI
+		if ( !HasBit(src->subtype, GVSF_VIRTUAL) ) {
+			InvalidateWindowData(WC_VEHICLE_DEPOT, src->tile);
+			InvalidateWindowClassesData(WC_TRAINS_LIST, 0);
+		}
 	} else {
 		/* We don't want to execute what we're just tried. */
 		RestoreTrainBackup(original_src);
@@ -1386,8 +1414,11 @@ CommandCost CmdSellRailWagon(DoCommandFlag flags, Vehicle *t, uint16 data, uint3
 		NormaliseTrainHead(new_head);
 
 		/* We are undoubtedly changing something in the depot and train list. */
-		InvalidateWindowData(WC_VEHICLE_DEPOT, v->tile);
-		InvalidateWindowClassesData(WC_TRAINS_LIST, 0);
+		/* Unless its a virtual train */ //MYGUI
+		if ( !HasBit(v->subtype, GVSF_VIRTUAL) ) {
+			InvalidateWindowData(WC_VEHICLE_DEPOT, v->tile);
+			InvalidateWindowClassesData(WC_TRAINS_LIST, 0);
+		}
 
 		/* Actually delete the sold 'goods' */
 		delete sell_head;
@@ -1396,6 +1427,7 @@ CommandCost CmdSellRailWagon(DoCommandFlag flags, Vehicle *t, uint16 data, uint3
 		RestoreTrainBackup(original);
 	}
 
+	cost.AffectCost();
 	return cost;
 }
 
@@ -1476,6 +1508,10 @@ static void MarkTrainAsStuck(Train *v)
 		v->wait_counter = 0;
 
 		/* Stop train */
+		if (v->cur_speed > 25) {
+		  v->breakdown_ctr = 2;
+		  v->breakdown_delay = 200;
+		}
 		v->cur_speed = 0;
 		v->subspeed = 0;
 		v->SetLastSpeed();
@@ -1646,19 +1682,31 @@ static bool TrainApproachingCrossing(TileIndex tile)
 	return HasVehicleOnPos(tile_from, &tile, &TrainApproachingCrossingEnum);
 }
 
+/** Check if the crossing should be closed
+ *  @return train on crossing || train approaching crossing || reserved
+ */
+static inline bool CheckLevelCrossing(TileIndex tile)
+{
+	return HasCrossingReservation(tile) || HasVehicleOnPos(tile, NULL, &TrainOnTileEnum) || TrainApproachingCrossing(tile);
+}
 
 /**
  * Sets correct crossing state
  * @param tile tile to update
  * @param sound should we play sound?
+ * @param force_state force close the crossing due to an adjacent tile
  * @pre tile is a rail-road crossing
  */
-void UpdateLevelCrossing(TileIndex tile, bool sound)
+static void UpdateLevelCrossingTile(TileIndex tile, bool sound, bool force_state = false)
 {
 	assert(IsLevelCrossingTile(tile));
+	bool new_state;
 
-	/* train on crossing || train approaching crossing || reserved */
-	bool new_state = HasVehicleOnPos(tile, NULL, &TrainOnTileEnum) || TrainApproachingCrossing(tile) || HasCrossingReservation(tile);
+	if (force_state) {
+		new_state = force_state;
+	} else {
+		new_state = CheckLevelCrossing(tile);
+	}
 
 	if (new_state != IsCrossingBarred(tile)) {
 		if (new_state && sound) {
@@ -1666,6 +1714,33 @@ void UpdateLevelCrossing(TileIndex tile, bool sound)
 		}
 		SetCrossingBarred(tile, new_state);
 		MarkTileDirtyByTile(tile);
+	}
+}
+
+/**
+ * Cycles the adjacent crossings and sets their state
+ * @param tile tile to update
+ * @param sound should we play sound?
+ */
+void UpdateLevelCrossing(TileIndex tile, bool sound)
+{
+	bool is_forced = false;
+	if (!IsLevelCrossingTile(tile)) return;
+
+	Axis axis = GetCrossingRoadAxis(tile);
+
+	for (TileIndex t = tile; !is_forced && IsLevelCrossingTile(t) && GetCrossingRoadAxis(t) == axis; t = TileAddByDiagDir(t, AxisToDiagDir(GetCrossingRoadAxis(t)))) {
+		is_forced |= CheckLevelCrossing(t);
+	}
+	for (TileIndex t = tile; !is_forced && IsLevelCrossingTile(t) && GetCrossingRoadAxis(t) == axis; t = TileAddByDiagDir(t, ReverseDiagDir(AxisToDiagDir(GetCrossingRoadAxis(t))))) {
+		is_forced |= CheckLevelCrossing(t);
+	}
+	
+	for (TileIndex t = tile; IsLevelCrossingTile(t) && GetCrossingRoadAxis(t) == axis; t = TileAddByDiagDir(t, AxisToDiagDir(GetCrossingRoadAxis(t)))) {
+		UpdateLevelCrossingTile(t, sound, is_forced);
+	}
+	for (TileIndex t = tile; IsLevelCrossingTile(t) && GetCrossingRoadAxis(t) == axis; t = TileAddByDiagDir(t, ReverseDiagDir(AxisToDiagDir(GetCrossingRoadAxis(t))))) {
+		UpdateLevelCrossingTile(t, sound, is_forced);
 	}
 }
 
@@ -1678,9 +1753,8 @@ void UpdateLevelCrossing(TileIndex tile, bool sound)
 static inline void MaybeBarCrossingWithSound(TileIndex tile)
 {
 	if (!IsCrossingBarred(tile)) {
-		BarCrossing(tile);
-		if (_settings_client.sound.ambient) SndPlayTileFx(SND_0E_LEVEL_CROSSING, tile);
-		MarkTileDirtyByTile(tile);
+               SetCrossingReservation(tile, true);
+               UpdateLevelCrossing(tile, true);
 	}
 }
 
@@ -1845,7 +1919,11 @@ void ReverseTrainDirection(Train *v)
 		if (IsRailDepotTile(v->tile) && TrackdirToExitdir(v->GetVehicleTrackdir()) == GetRailDepotDirection(v->tile)) first_tile_okay = false;
 
 		if (IsRailStationTile(v->tile)) SetRailStationPlatformReservation(v->tile, TrackdirToExitdir(v->GetVehicleTrackdir()), true);
-		if (TryPathReserve(v, false, first_tile_okay)) {
+		if (TryPathReserve(v, false, first_tile_okay)) {		
+			/* We reserved one pbs block, which is equal to yellow signal */
+			if (_settings_game.pf.yellow_pbs) {
+		  	v->max_signal_speed = _settings_game.pf.yellow_speed * (GetRailType(v->tile) == RAILTYPE_MAGLEV ? 2 : 1);
+		  }
 			/* Do a look-ahead now in case our current tile was already a safe tile. */
 			CheckNextTrainTile(v);
 		} else if (v->current_order.GetType() != OT_LOADING) {
@@ -1948,7 +2026,7 @@ CommandCost CmdForceTrainProceed(TileIndex tile, DoCommandFlag flags, uint32 p1,
 
 	if (!t->IsPrimaryVehicle()) return CMD_ERROR;
 
-	CommandCost ret = CheckOwnership(t->owner);
+	CommandCost ret = CheckVehicleControlAllowed(t);
 	if (ret.Failed()) return ret;
 
 
@@ -2025,6 +2103,253 @@ void Train::PlayLeaveStationSound() const
 	SndPlayVehicleFx(sfx[RailVehInfo(engtype)->engclass], this);
 }
 
+/** This class will save the current order of a vehicle and restore it on destruction. */
+class VehicleOrderSaver {
+private:
+	Train          *v;
+	Order          old_order;
+	TileIndex      old_dest_tile;
+	StationID      old_last_station_visited;
+	VehicleOrderID index;
+	bool           suppress_implicit_orders;
+
+public:
+	VehicleOrderSaver(Train *_v) :
+		v(_v),
+		old_order(_v->current_order),
+		old_dest_tile(_v->dest_tile),
+		old_last_station_visited(_v->last_station_visited),
+		index(_v->cur_real_order_index),
+		suppress_implicit_orders(HasBit(_v->gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS))
+	{
+	}
+
+	~VehicleOrderSaver()
+	{
+		this->v->current_order = this->old_order;
+		this->v->dest_tile = this->old_dest_tile;
+		this->v->last_station_visited = this->old_last_station_visited;
+		SB(this->v->gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS, 1, suppress_implicit_orders ? 1: 0);
+	}
+
+	/**
+	 * Set the current vehicle order to the next order in the order list.
+	 * @param skip_first Shall the first (i.e. active) order be skipped?
+	 * @return True if a suitable next order could be found.
+	 */
+	bool SwitchToNextOrder(bool skip_first)
+	{
+		if (this->v->GetNumOrders() == 0) return false;
+
+		if (skip_first) ++this->index;
+
+		int depth = 0;
+
+		do {
+			/* Wrap around. */
+			if (this->index >= this->v->GetNumOrders()) this->index = 0;
+
+			Order *order = this->v->GetOrder(this->index);
+			assert(order != NULL);
+
+			switch (order->GetType()) {
+				case OT_GOTO_DEPOT:
+					/* Skip service in depot orders when the train doesn't need service. */
+					if ((order->GetDepotOrderType() & ODTFB_SERVICE) && !this->v->NeedsServicing()) break;
+				case OT_GOTO_STATION:
+				case OT_GOTO_WAYPOINT:
+					this->v->current_order = *order;
+					return UpdateOrderDest(this->v, order, 0, true);
+				case OT_CONDITIONAL: {
+					VehicleOrderID next = ProcessConditionalOrder(order, this->v);
+					if (next != INVALID_VEH_ORDER_ID) {
+						depth++;
+						this->index = next;
+						/* Don't increment next, so no break here. */
+						continue;
+					}
+					break;
+				}
+				default:
+					break;
+			}
+			/* Don't increment inside the while because otherwise conditional
+			 * orders can lead to an infinite loop. */
+			++this->index;
+			depth++;
+		} while (this->index != this->v->cur_real_order_index && depth < this->v->GetNumOrders());
+
+		return false;
+	}
+};
+
+/** returns almost accurate braking distance in tiles */
+static int GetBrakingDistance(Train *v, int _target_speed) {
+	if (_target_speed >= v->cur_speed) {
+	  return 0;
+	}
+	int32 target_speed = _target_speed * 10 / 36;
+	int32 speed = v->cur_speed * 10 / 36;
+	int32 braking_force = GetRailType(v->tile) != RAILTYPE_MAGLEV ? -2*(1000 + v->gcache.cached_max_te / v->gcache.cached_weight) : -2*(4000 + v->gcache.cached_max_te / v->gcache.cached_weight);
+	/* If we consider seconds as most important scale factor, then the tile size is 18.96m.
+	 * Explanation: tile size = 16, we have to travel 192 advanced distance per 1/16 tile
+	 * to travel 192 advance distance, we need 256km/h speed, (advance speed is normal speed * 3 / 4)
+	 * movement is computed twice per tick, so we need only half -> 128km/h. 128km/h = 35,55555m/s
+	 * One second has 30 game ticks. 
+	 * If we travel 1/16 of tile per one tick, then we pass one tile in 16/30 seconds = 0,533333s.
+	 * Since 1/16 tile speed is 35,55555m/s, after 16 ticks we travelled 35,55555 x 0,53333 = 18,96284 meters
+	 */
+	return ((target_speed * target_speed - speed * speed) * 1000 / (2 * braking_force)) * 100 / 1896;
+}
+
+static int GetMaxSignalSpeed(Train *v, int32 _distance, int speed_on_next_signal) {
+	int64 speed = speed_on_next_signal * 10 / 36;
+	int64 distance = _distance * 189;
+	int64 braking_force = GetRailType(v->tile) != RAILTYPE_MAGLEV ? -2LL * (1000 + v->gcache.cached_max_te / v->gcache.cached_weight) : -2LL * (4000 + v->gcache.cached_max_te / v->gcache.cached_weight);
+	return IntSqrt(-1LL * (-speed * speed + 2LL * braking_force * distance / 10000LL)) * 36 / 10; 
+}
+
+static void SetYellowSignalSpeed(Train *v, SignalState sig_state, int speed) {
+	speed = speed / 10 * 10;
+	speed = max(speed, 30);
+	if (sig_state == SIGNAL_STATE_YELLOW) {
+	  v->yellow_signal_speed = min(speed, _settings_game.pf.yellow_speed * (GetRailType(v->tile) == RAILTYPE_MAGLEV ? 2 : 1));
+	} else {
+	  if (sig_state == SIGNAL_STATE_DOUBLE_YELLOW) {
+		  v->double_yellow_signal_speed = min(speed, _settings_game.pf.double_yellow_speed * (GetRailType(v->tile) == RAILTYPE_MAGLEV ? 2 : 1));
+		}
+	}
+}
+
+static SignalState FindExtendPbs(Train *v, TileIndex tile, Trackdir trackdir, byte *nof_extends, VehicleOrderSaver *orders, bool first_cycle, int *distance, bool extend) {
+
+	CFollowTrackRail ft(v);
+	TileIndex pbs_tile = tile;
+	Trackdir pbs_trackdir = trackdir;
+	assert (IsValidTrackdir(pbs_trackdir));
+	bool found_destination_and_stop_there = false;
+	
+	/* We look inside while cycle, when we are called recursively */
+	while (!HasPbsSignalOnTrackdir(pbs_tile, pbs_trackdir) || first_cycle) {
+		if (distance != NULL && !first_cycle) {
+			if (IsRailStationTile(pbs_tile) || IsTileType(pbs_tile, MP_TUNNELBRIDGE)) {			
+				(*distance) += (ft.m_tiles_skipped) * 10;
+			} else {
+				/* Diagonal vs. non diagonal track on scale of few tiles is 10:7 accurate enough */
+			  (*distance) += IsDiagonalTrackdir(pbs_trackdir) ? 10 : 7;
+			}
+		}
+		
+		if (HasStationTileRail(pbs_tile) && orders != NULL) {
+			StationID sid = GetStationIndex(pbs_tile);
+			/* Don't extend reservation, if we found our final destination, except when there is block signal ahead */
+			if (v->current_order.ShouldStopAtStation(v, sid)) {
+				if (!_settings_game.pf.slow_down_station) {
+					(*nof_extends) = 0;
+					return SIGNAL_STATE_GREEN;
+				}
+				found_destination_and_stop_there = true;		
+		
+			}
+			/* there can be many waypoints and non-stop stations in one reserved block, forecast properly */
+			if (sid == v->current_order.GetDestination()) {
+				orders->SwitchToNextOrder(true);
+			}
+		}
+		if (!ft.Follow(pbs_tile, pbs_trackdir)) {
+			return SIGNAL_STATE_RED;
+		}
+    
+		TrackdirBits reserved = ft.m_new_td_bits & TrackBitsToTrackdirBits(GetReservedTrackbits(ft.m_new_tile));
+		Trackdir new_trackdir = FindFirstTrackdir(reserved);
+		TrackBits tracks = TrackdirBitsToTrackBits(ft.m_new_td_bits);
+		if (reserved == TRACKDIR_BIT_NONE) {			
+			if (KillFirstBit(tracks) == TRACK_BIT_NONE && !found_destination_and_stop_there) {
+				assert(IsValidTrack(FindFirstTrack(tracks)));
+				DiagDirection enterdir = DiagdirBetweenTiles(ft.m_old_tile, ft.m_new_tile); 
+				if (HasPbsSignalOnTrackdir(ft.m_new_tile, TrackEnterdirToTrackdir(FindFirstTrack(tracks), enterdir))) {
+					if (!extend) return SIGNAL_STATE_RED;
+					ExtendYellowReservation(v, ft.m_old_tile, ft.m_old_td, nof_extends);
+					return GetSignalStateByTrackdir(ft.m_new_tile, TrackEnterdirToTrackdir(FindFirstTrack(tracks), enterdir));
+				}
+			}
+			return SIGNAL_STATE_RED;
+		}
+		if (KillFirstBit(tracks) == TRACK_BIT_NONE) {
+			assert(IsValidTrack(FindFirstTrack(tracks)));
+			if (IsTileType(ft.m_new_tile, MP_RAILWAY) && HasSignalOnTrackdir(ft.m_new_tile, new_trackdir) && !HasPbsSignalOnTrackdir(ft.m_new_tile, new_trackdir)) {
+				if (!extend) return SIGNAL_STATE_RED;
+				(*nof_extends) = 0;
+				return SIGNAL_STATE_GREEN;
+			}
+		}
+		pbs_tile = ft.m_new_tile;
+		pbs_trackdir = new_trackdir;
+		if (first_cycle) {
+			first_cycle = false;
+		}
+		assert (IsValidTrackdir(pbs_trackdir));
+	}
+	if (!extend) return SIGNAL_STATE_RED;
+
+	/* if we are going to stop, don't extend reservation */
+	if (found_destination_and_stop_there) return SIGNAL_STATE_RED;
+
+	SignalState signal_state = GetSignalStateByTrackdir(pbs_tile, pbs_trackdir);
+  
+	/* This reservation can't be ours, there is train ahead */
+	if (signal_state == SIGNAL_STATE_RED) {
+		return SIGNAL_STATE_RED;
+	}
+  
+	/* we already reserved whole path, nothing to do */
+	if (signal_state == SIGNAL_STATE_GREEN) {
+		return SIGNAL_STATE_GREEN;
+	}
+  
+	/* on yellow and double yellow state, we do pretty much the same thing */
+	(*nof_extends)--;
+	if (signal_state == SIGNAL_STATE_YELLOW) {
+		if (*nof_extends < 1) return SIGNAL_STATE_YELLOW;
+	}
+	if (signal_state == SIGNAL_STATE_DOUBLE_YELLOW) {
+		if (*nof_extends < 2) return SIGNAL_STATE_DOUBLE_YELLOW;
+	}
+	byte nof_extends_old = *nof_extends;
+	
+	int _distance = 0;	
+	/* we need to look a little further */
+	FindExtendPbs(v, pbs_tile, pbs_trackdir, nof_extends, orders, true, &_distance, true);
+	switch (nof_extends_old - *nof_extends) {
+		case 0: break;
+		case 1:
+			/* we are already double yellow, when entering from double yellow state */
+			if (signal_state != SIGNAL_STATE_DOUBLE_YELLOW) {
+				SetYellowSignalSpeed(v, SIGNAL_STATE_DOUBLE_YELLOW, GetMaxSignalSpeed(v, _distance / 10, v->yellow_signal_speed));
+				SetSignalStateByTrackdir(pbs_tile, pbs_trackdir, SIGNAL_STATE_DOUBLE_YELLOW);
+				MarkTileDirtyByTile(pbs_tile);
+			}
+			break;
+		case 2:
+			SetSignalStateByTrackdir(pbs_tile, pbs_trackdir, SIGNAL_STATE_GREEN);
+			MarkTileDirtyByTile(pbs_tile);
+			break;
+		default:
+			break;
+	}
+	return GetSignalStateByTrackdir(pbs_tile, pbs_trackdir);
+}
+
+/** Determine how far can train extend its reservation according to railtype, game settings and its max speed. */
+static byte GetMaxNofExtendsForTrain(Train *v, TileIndex tile) {
+	byte nof_extends = 1;
+	if (_settings_game.pf.yellow_pbs) {						 
+	  if (v->GetDisplayMaxSpeed() > (_settings_game.pf.double_yellow_speed * (GetRailType(tile) == RAILTYPE_MAGLEV ? 2 : 1))) nof_extends++;
+	  if (v->GetDisplayMaxSpeed() > (_settings_game.pf.yellow_speed * (GetRailType(tile) == RAILTYPE_MAGLEV ? 2 : 1))) nof_extends++;
+	}
+	return nof_extends;
+}
+
 /**
  * Check if the train is on the last reserved tile and try to extend the path then.
  * @param v %Train that needs its path extended.
@@ -2080,7 +2405,50 @@ static void CheckNextTrainTile(Train *v)
 				if (_settings_game.pf.forbid_90_deg) {
 					tracks &= ~TrackCrossesTracks(TrackdirToTrack(ft.m_old_td));
 				}
-				ChooseTrainTrack(v, ft.m_new_tile, ft.m_exitdir, tracks, false, NULL, false);
+				ChooseTrainTrack(v, ft.m_new_tile, ft.m_exitdir, tracks, false, NULL, false, GetMaxNofExtendsForTrain(v, ft.m_new_tile));
+
+			}
+		}
+	} else {
+		if (_settings_game.pf.yellow_pbs) {
+			TrackdirBits reserved = ft.m_new_td_bits & TrackBitsToTrackdirBits(GetReservedTrackbits(ft.m_new_tile));
+			Trackdir new_trackdir = FindFirstTrackdir(reserved);
+			byte nof_extends = GetMaxNofExtendsForTrain(v, ft.m_new_tile);
+			
+			/* backup orders here, we're going to forecast stuffs in FindExtendPbs */ 
+			VehicleOrderSaver orders(v);
+			/* number of tiles to next signal multiplied by 10 */   
+			int distance = 0;
+			if (IsRailStationTile(ft.m_new_tile)) {
+				distance += DistanceManhattan(v->tile, ft.m_new_tile) * 10;
+			}
+			if (IsTileType(v->tile, MP_TUNNELBRIDGE)) {
+			  distance += DistanceManhattan(TileVirtXY(v->x_pos, v->y_pos), ft.m_new_tile) * 10;
+			}   
+			SignalState signal_state = FindExtendPbs(v, ft.m_new_tile, new_trackdir, &nof_extends, &orders, false, &distance, true);
+
+			if (_settings_game.pf.watch_next_signal) {
+				uint16 new_signal_speed;
+				switch (signal_state) {
+				  case SIGNAL_STATE_GREEN:
+				  	new_signal_speed = UINT16_MAX;
+				  	break;
+				  case SIGNAL_STATE_DOUBLE_YELLOW:
+				  	new_signal_speed = v->double_yellow_signal_speed;
+				  	break;
+				  case SIGNAL_STATE_YELLOW:
+				  	new_signal_speed = v->yellow_signal_speed;
+				  	break;
+				  case SIGNAL_STATE_RED:
+				  	new_signal_speed = 15;
+				  	break;
+				  default: NOT_REACHED();
+				}
+				if (/* new_signal_speed > 0 &&*/ distance <= max(GetBrakingDistance(v, new_signal_speed) * 10 + 7, 10)) {
+				  v->max_signal_speed = new_signal_speed;
+				} else {
+					v->max_signal_speed = max(v->max_signal_speed, new_signal_speed);
+				}
 			}
 		}
 	}
@@ -2155,6 +2523,10 @@ static bool CheckTrainStayInDepot(Train *v)
 
 	v->vehstatus &= ~VS_HIDDEN;
 	v->cur_speed = 0;
+	/* if we are entering pbs block with one reservetion, it's same as yellow state */
+	v->max_signal_speed = seg_state == SIGSEG_PBS ? _settings_game.pf.yellow_speed * (GetRailType(v->tile) == RAILTYPE_MAGLEV ? 2 : 1) : UINT16_MAX;
+	v->yellow_signal_speed = 200;
+	v->double_yellow_signal_speed = 210;
 
 	v->UpdateViewport(true, true);
 	VehicleUpdatePosition(v);
@@ -2247,7 +2619,7 @@ void FreeTrainTrackReservation(const Train *v, TileIndex origin, Trackdir orig_t
 			}
 			if (HasPbsSignalOnTrackdir(tile, td)) {
 				if (GetSignalStateByTrackdir(tile, td) == SIGNAL_STATE_RED) {
-					/* Red PBS signal? Can't be our reservation, would be green then. */
+					/* Red PBS signal? Can't be our reservation, would be green/yellow then. */
 					break;
 				} else {
 					/* Turn the signal back to red. */
@@ -2394,7 +2766,7 @@ static PBSTileInfo ExtendTrainReservation(const Train *v, TrackBits *new_tracks,
  * @param override_railtype Whether all physically compatible railtypes should be followed.
  * @return True if a path to a safe stopping tile could be reserved.
  */
-static bool TryReserveSafeTrack(const Train *v, TileIndex tile, Trackdir td, bool override_tailtype)
+static PBSTileInfo TryReserveSafeTrack(const Train *v, TileIndex tile, Trackdir td, bool override_tailtype)
 {
 	switch (_settings_game.pf.pathfinder_for_trains) {
 		case VPF_NPF: return NPFTrainFindNearestSafeTile(v, tile, td, override_tailtype);
@@ -2404,88 +2776,208 @@ static bool TryReserveSafeTrack(const Train *v, TileIndex tile, Trackdir td, boo
 	}
 }
 
-/** This class will save the current order of a vehicle and restore it on destruction. */
-class VehicleOrderSaver {
-private:
-	Train          *v;
-	Order          old_order;
-	TileIndex      old_dest_tile;
-	StationID      old_last_station_visited;
-	VehicleOrderID index;
-	bool           suppress_implicit_orders;
-
-public:
-	VehicleOrderSaver(Train *_v) :
-		v(_v),
-		old_order(_v->current_order),
-		old_dest_tile(_v->dest_tile),
-		old_last_station_visited(_v->last_station_visited),
-		index(_v->cur_real_order_index),
-		suppress_implicit_orders(HasBit(_v->gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS))
-	{
-	}
-
-	~VehicleOrderSaver()
-	{
-		this->v->current_order = this->old_order;
-		this->v->dest_tile = this->old_dest_tile;
-		this->v->last_station_visited = this->old_last_station_visited;
-		SB(this->v->gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS, 1, suppress_implicit_orders ? 1: 0);
-	}
-
-	/**
-	 * Set the current vehicle order to the next order in the order list.
-	 * @param skip_first Shall the first (i.e. active) order be skipped?
-	 * @return True if a suitable next order could be found.
-	 */
-	bool SwitchToNextOrder(bool skip_first)
-	{
-		if (this->v->GetNumOrders() == 0) return false;
-
-		if (skip_first) ++this->index;
-
-		int depth = 0;
-
-		do {
-			/* Wrap around. */
-			if (this->index >= this->v->GetNumOrders()) this->index = 0;
-
-			Order *order = this->v->GetOrder(this->index);
-			assert(order != NULL);
-
-			switch (order->GetType()) {
-				case OT_GOTO_DEPOT:
-					/* Skip service in depot orders when the train doesn't need service. */
-					if ((order->GetDepotOrderType() & ODTFB_SERVICE) && !this->v->NeedsServicing()) break;
-				case OT_GOTO_STATION:
-				case OT_GOTO_WAYPOINT:
-					this->v->current_order = *order;
-					return UpdateOrderDest(this->v, order, 0, true);
-				case OT_CONDITIONAL: {
-					VehicleOrderID next = ProcessConditionalOrder(order, this->v);
-					if (next != INVALID_VEH_ORDER_ID) {
-						depth++;
-						this->index = next;
-						/* Don't increment next, so no break here. */
-						continue;
-					}
-					break;
+static void UpgradeSignalColorAndExtendYellowReservationIfPossible(Train *v, TileIndex signal_tile, Trackdir siganl_trackdir, TileIndex tile, Trackdir trackdir, byte *nof_extends, bool found_destination_and_stop_there)
+{
+	if (IsSafeWaitingPosition(v, tile, trackdir, true, _settings_game.pf.forbid_90_deg)) {
+		(*nof_extends)--;
+		/* if our safe waiting position is non-pbs signal, we don't want to slow down. 
+		 * Slowing down on e.g. block signals would make using pbs together with block signals useless.
+		 * We don't want to force users to abandon one type of signal. */
+		if ((IsTileType(tile, MP_RAILWAY) && HasSignalOnTrackdir(tile, trackdir) && !HasPbsSignalOnTrackdir(tile, trackdir)) || (found_destination_and_stop_there && !_settings_game.pf.slow_down_station)) {
+			if ((*nof_extends) == 1) {
+			  SetSignalStateByTrackdir(signal_tile, siganl_trackdir, SIGNAL_STATE_DOUBLE_YELLOW);
+			} else {
+				if ((*nof_extends) == 2) {
+					SetSignalStateByTrackdir(signal_tile, siganl_trackdir, SIGNAL_STATE_GREEN);
 				}
-				default:
-					break;
 			}
-			/* Don't increment inside the while because otherwise conditional
-			 * orders can lead to an infinite loop. */
-			++this->index;
-			depth++;
-		} while (this->index != this->v->cur_real_order_index && depth < this->v->GetNumOrders());
+			(*nof_extends) = 0;
+			return;
+		}
+		/* Save old value to determine, how far we extended our reservation */
+		byte nof_extends_old = *nof_extends;		
+		/* If next tile is pbs and we didn't find our destination yet, try to extend reservation */	
+		if (IsNextTilePbs(v, tile, trackdir, _settings_game.pf.forbid_90_deg) && !found_destination_and_stop_there) {
+			if ((*nof_extends) > 0) {
+				ExtendYellowReservation(v, tile, trackdir, nof_extends);
+				if ((nof_extends_old - (*nof_extends)) == 1) {
+					SetSignalStateByTrackdir(signal_tile, siganl_trackdir, SIGNAL_STATE_DOUBLE_YELLOW);
+					int distance = 0;
+					FindExtendPbs(v, signal_tile, siganl_trackdir, NULL, NULL, true, &distance, false);
+					SetYellowSignalSpeed(v, SIGNAL_STATE_DOUBLE_YELLOW, GetMaxSignalSpeed(v, distance / 10, v->yellow_signal_speed));
 
-		return false;
+				} else {
+					if ((nof_extends_old - (*nof_extends)) == 2) {
+						SetSignalStateByTrackdir(signal_tile, siganl_trackdir, SIGNAL_STATE_GREEN);
+					}
+				}
+			}
+		}
+		if (nof_extends_old == 0 || (nof_extends_old - (*nof_extends)) == 0) {
+			int distance = 0;
+			FindExtendPbs(v, signal_tile, siganl_trackdir, NULL, NULL, true, &distance, false);
+			SetYellowSignalSpeed(v, SIGNAL_STATE_YELLOW, GetMaxSignalSpeed(v, distance / 10, 0));
+		}
+	}		
+}
+
+/** Very similar to ChooseTrainTrack function, assuming we are entering here from red pbs signal */
+static void ExtendYellowReservation(Train *v, TileIndex old_tile, Trackdir old_trackdir, byte * nof_extends)
+{
+	/* Block signal tile is safe waiting position, there can be pbs on next tile too, but this isn't valid state for extending reservation */
+	if (IsTileType(old_tile, MP_RAILWAY) && HasSignalOnTrackdir(old_tile, old_trackdir) && !HasPbsSignalOnTrackdir(old_tile, old_trackdir)) {
+		return;
 	}
-};
+	CFollowTrackRail ft(v);
+	if (!ft.Follow(old_tile, old_trackdir)) return;
+  
+  /* Next tile is reserved */
+	if (HasReservedTracks(ft.m_new_tile, TrackdirBitsToTrackBits(ft.m_new_td_bits))) {		
+		return;
+	}
+  
+	TileIndex tile = ft.m_new_tile;
+	DiagDirection enterdir = DiagdirBetweenTiles(old_tile, tile);
+	assert(IsValidDiagDirection(enterdir));
+  
+
+	/* Get the status of the tracks in the new tile and mask
+	 * away the bits that aren't reachable. */
+	TrackStatus ts = GetTileTrackStatus(tile, TRANSPORT_RAIL, 0, ReverseDiagDir(enterdir));
+	TrackdirBits reachable_trackdirs = DiagdirReachesTrackdirs(enterdir);
+
+	TrackdirBits trackdirbits = TrackStatusToTrackdirBits(ts) & reachable_trackdirs;
+
+	TrackBits bits = TrackdirBitsToTrackBits(trackdirbits);
+	if (_settings_game.pf.forbid_90_deg) {
+		bits &= ~TrackdirBitsToTrackBits(TrackdirCrossesTrackdirs(old_trackdir));
+	}    
+  
+	Track track = FindFirstTrack(bits);
+  
+	assert(HasPbsSignalOnTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir))); 
+	SetSignalStateByTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir), SIGNAL_STATE_YELLOW);
+  
+	PBSTileInfo   res_dest(tile, INVALID_TRACKDIR, false);
+	DiagDirection dest_enterdir = enterdir;
+	TrackBits tracks = TRACK_BIT_NONE;
+	res_dest = ExtendTrainReservation(v, &tracks, &dest_enterdir);
+	if (res_dest.tile == INVALID_TILE) {
+		SetSignalStateByTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir), SIGNAL_STATE_RED);
+		return;
+	}
+	if (res_dest.okay) {
+		/* Got a valid reservation that ends at a safe target, quick exit. */
+		MarkTileDirtyByTile(tile);
+		TryReserveRailTrack(tile, track);
+		UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(track, enterdir), res_dest.tile, res_dest.trackdir, nof_extends, false);
+		return;
+	}  
+  
+  
+	/* Check if the train needs service here, so it has a chance to always find a depot.
+	 * Also check if the current order is a service order so we don't reserve a path to
+	 * the destination but instead to the next one if service isn't needed. */
+	CheckIfTrainNeedsService(v);
+	if (v->current_order.IsType(OT_DUMMY) || v->current_order.IsType(OT_CONDITIONAL) || v->current_order.IsType(OT_GOTO_DEPOT)) ProcessOrders(v); 
+
+	/* This is duplicite orders saving in some cases, but there are cases, when it's needed and this duplicity doesn't hurt anything */
+	VehicleOrderSaver orders(v);
+  
+ 	if (res_dest.tile != INVALID_TILE && !res_dest.okay) {
+		/* Pathfinders are able to tell that route was only 'guessed'. */
+		bool      path_found = true;
+		TileIndex new_tile = res_dest.tile;
+
+		DoTrainPathfind(v, new_tile, dest_enterdir, tracks, path_found, true, &res_dest);
+	}
+
+	/* A path was found, but could not be reserved. */
+	if (res_dest.tile != INVALID_TILE && !res_dest.okay) {
+		FreeTrainTrackReservation(v, old_tile, old_trackdir);
+		return;
+	}
+
+	/* No possible reservation target found, we are probably lost. */
+	if (res_dest.tile == INVALID_TILE) {
+		/* Try to find any safe destination. */
+		PBSTileInfo origin = FollowTrainReservation(v);
+		PBSTileInfo try_reserve_dest;
+		try_reserve_dest = TryReserveSafeTrack(v, origin.tile, origin.trackdir, false);
+		if (try_reserve_dest.okay) {
+			//TryReserveRailTrack(v->tile, TrackdirToTrack(v->GetVehicleTrackdir())); We don't need this???
+			res_dest = try_reserve_dest;
+		  UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(track, enterdir), res_dest.tile, res_dest.trackdir, nof_extends, false);
+		  MarkTileDirtyByTile(tile);
+		} else {
+			FreeTrainTrackReservation(v, old_tile, old_trackdir);
+		}
+		return;
+	}
+	
+	bool found_destination_and_stop_there = false;
+
+	/* Reservation target found and free, check if it is safe. */
+	while (!IsSafeWaitingPosition(v, res_dest.tile, res_dest.trackdir, true, _settings_game.pf.forbid_90_deg)) {
+		/* Extend reservation until we have found a safe position. */
+		DiagDirection exitdir = TrackdirToExitdir(res_dest.trackdir);
+		TileIndex     next_tile = TileAddByDiagDir(res_dest.tile, exitdir);
+		TrackBits     reachable = TrackdirBitsToTrackBits((TrackdirBits)(GetTileTrackStatus(next_tile, TRANSPORT_RAIL, 0))) & DiagdirReachesTracks(exitdir);
+		if (_settings_game.pf.forbid_90_deg) {
+			reachable &= ~TrackCrossesTracks(TrackdirToTrack(res_dest.trackdir));
+		}
+
+		/* We are most likely at station or waypoint, check if we should stop here to determine, if we should extend yellow color */
+		if (IsRailStationTile(res_dest.tile)) {
+			StationID sid = GetStationIndex(res_dest.tile);
+			if (v->current_order.ShouldStopAtStation(v, sid)) {
+		  	found_destination_and_stop_there = true;
+			}
+		}
+
+		/* Get next order with destination. */
+		if (orders.SwitchToNextOrder(true)) {
+			PBSTileInfo cur_dest;
+			bool path_found;
+			DoTrainPathfind(v, next_tile, exitdir, reachable, path_found, true, &cur_dest);
+			if (cur_dest.tile != INVALID_TILE) {
+				res_dest = cur_dest;
+				if (res_dest.okay) continue;
+				/* Path found, but could not be reserved. */
+				FreeTrainTrackReservation(v, old_tile, old_trackdir);
+				return;
+			}
+		}
+		/* No order or no safe position found, try any position. */
+		PBSTileInfo try_reserve_dest;
+		try_reserve_dest = TryReserveSafeTrack(v, res_dest.tile, res_dest.trackdir, true);
+		if (!try_reserve_dest.okay) {
+			FreeTrainTrackReservation(v, old_tile, old_trackdir);
+			return;
+		}
+		res_dest = try_reserve_dest;
+		break;
+	}
+	
+	/* When safe waiting position is also station tile, check if we should stop there or jump to next order */	
+	if (HasStationTileRail(res_dest.tile)) {
+		StationID sid = GetStationIndex(res_dest.tile);
+		if (v->current_order.ShouldStopAtStation(v, sid)) {
+	  	found_destination_and_stop_there = true;
+		}
+		if (sid == v->current_order.GetDestination()) {
+			orders.SwitchToNextOrder(true);
+		}
+	}
+	/* we should be here only when we found our safe destination, but strange things always happen */
+	if (res_dest.tile != INVALID_TILE && res_dest.okay) {
+		UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(track, enterdir), res_dest.tile, res_dest.trackdir, nof_extends, found_destination_and_stop_there);
+	}
+	MarkTileDirtyByTile(tile); // signal changed  
+}
 
 /* choose a track */
-static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, TrackBits tracks, bool force_res, bool *got_reservation, bool mark_stuck)
+static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, TrackBits tracks, bool force_res, bool *got_reservation, bool mark_stuck, byte nof_extends)
 {
 	Track best_track = INVALID_TRACK;
 	bool do_track_reservation = _settings_game.pf.reserve_paths || force_res;
@@ -2500,14 +2992,16 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 	/* Do we have a suitable reserved track? */
 	if (res_tracks != TRACK_BIT_NONE) return FindFirstTrack(res_tracks);
 
+  Track signal_track = INVALID_TRACK;
 	/* Quick return in case only one possible track is available */
 	if (KillFirstBit(tracks) == TRACK_BIT_NONE) {
 		Track track = FindFirstTrack(tracks);
 		/* We need to check for signals only here, as a junction tile can't have signals. */
 		if (track != INVALID_TRACK && HasPbsSignalOnTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir))) {
+			signal_track = track;
 			do_track_reservation = true;
 			changed_signal = true;
-			SetSignalStateByTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir), SIGNAL_STATE_GREEN);
+			SetSignalStateByTrackdir(tile, TrackEnterdirToTrackdir(track, enterdir), _settings_game.pf.yellow_pbs ? SIGNAL_STATE_YELLOW : SIGNAL_STATE_GREEN);
 		} else if (!do_track_reservation) {
 			return track;
 		}
@@ -2529,6 +3023,11 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 			if (got_reservation != NULL) *got_reservation = true;
 			if (changed_signal) MarkTileDirtyByTile(tile);
 			TryReserveRailTrack(v->tile, TrackdirToTrack(v->GetVehicleTrackdir()));
+			/* If next tile is pbs and we didn't find our destination station yet, try to extend reservation */
+			if (changed_signal) {
+				UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(signal_track, enterdir), res_dest.tile, res_dest.trackdir, &nof_extends, false);
+			}
+
 			return best_track;
 		}
 
@@ -2581,12 +3080,18 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 	if (res_dest.tile == INVALID_TILE) {
 		/* Try to find any safe destination. */
 		PBSTileInfo origin = FollowTrainReservation(v);
-		if (TryReserveSafeTrack(v, origin.tile, origin.trackdir, false)) {
+		PBSTileInfo try_reserve_dest;
+		try_reserve_dest = TryReserveSafeTrack(v, origin.tile, origin.trackdir, false);
+		if (try_reserve_dest.okay) {
 			TrackBits res = GetReservedTrackbits(tile) & DiagdirReachesTracks(enterdir);
 			best_track = FindFirstTrack(res);
 			TryReserveRailTrack(v->tile, TrackdirToTrack(v->GetVehicleTrackdir()));
 			if (got_reservation != NULL) *got_reservation = true;
-			if (changed_signal) MarkTileDirtyByTile(tile);
+			res_dest = try_reserve_dest;
+			if (changed_signal) {
+			  UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(signal_track, enterdir), res_dest.tile, res_dest.trackdir, &nof_extends, false);
+			  MarkTileDirtyByTile(tile);
+			}
 		} else {
 			FreeTrainTrackReservation(v);
 			if (mark_stuck) MarkTrainAsStuck(v);
@@ -2595,6 +3100,8 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 	}
 
 	if (got_reservation != NULL) *got_reservation = true;
+	
+	bool found_destination_and_stop_there = false;
 
 	/* Reservation target found and free, check if it is safe. */
 	while (!IsSafeWaitingPosition(v, res_dest.tile, res_dest.trackdir, true, _settings_game.pf.forbid_90_deg)) {
@@ -2604,6 +3111,14 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 		TrackBits     reachable = TrackdirBitsToTrackBits((TrackdirBits)(GetTileTrackStatus(next_tile, TRANSPORT_RAIL, 0))) & DiagdirReachesTracks(exitdir);
 		if (_settings_game.pf.forbid_90_deg) {
 			reachable &= ~TrackCrossesTracks(TrackdirToTrack(res_dest.trackdir));
+		}
+		
+		/* We are most likely at station or waypoint, check if we should stop here to determine, if we should extend yellow color */
+		if (IsRailStationTile(res_dest.tile)) {
+			StationID sid = GetStationIndex(res_dest.tile);
+			if (v->current_order.ShouldStopAtStation(v, sid)) {
+		  	found_destination_and_stop_there = true;
+			}
 		}
 
 		/* Get next order with destination. */
@@ -2623,18 +3138,34 @@ static Track ChooseTrainTrack(Train *v, TileIndex tile, DiagDirection enterdir, 
 			}
 		}
 		/* No order or no safe position found, try any position. */
-		if (!TryReserveSafeTrack(v, res_dest.tile, res_dest.trackdir, true)) {
+		PBSTileInfo try_reserve_dest;
+		try_reserve_dest = TryReserveSafeTrack(v, res_dest.tile, res_dest.trackdir, true);
+		if (!try_reserve_dest.okay) {
 			FreeTrainTrackReservation(v);
 			if (mark_stuck) MarkTrainAsStuck(v);
 			if (got_reservation != NULL) *got_reservation = false;
 			changed_signal = false;
 		}
+		res_dest = try_reserve_dest;
 		break;
 	}
 
 	TryReserveRailTrack(v->tile, TrackdirToTrack(v->GetVehicleTrackdir()));
 
-	if (changed_signal) MarkTileDirtyByTile(tile);
+  /* When safe waiting position is also station tile, check if we should stop there or jump to next order */
+	if (HasStationTileRail(res_dest.tile)) {
+		StationID sid = GetStationIndex(res_dest.tile);
+		if (v->current_order.ShouldStopAtStation(v, sid)) {
+	  	found_destination_and_stop_there = true;
+		}
+		if (sid == v->current_order.GetDestination()) {
+			orders.SwitchToNextOrder(true);
+		}
+	}
+	if (changed_signal) {
+		UpgradeSignalColorAndExtendYellowReservationIfPossible(v, tile, TrackEnterdirToTrackdir(signal_track, enterdir), res_dest.tile, res_dest.trackdir, &nof_extends, found_destination_and_stop_there);
+		MarkTileDirtyByTile(tile);
+	}
 
 	return best_track;
 }
@@ -2697,7 +3228,8 @@ bool TryPathReserve(Train *v, bool mark_as_stuck, bool first_tile_okay)
 	if (_settings_game.pf.forbid_90_deg) reachable &= ~TrackCrossesTracks(TrackdirToTrack(origin.trackdir));
 
 	bool res_made = false;
-	ChooseTrainTrack(v, new_tile, exitdir, reachable, true, &res_made, mark_as_stuck);
+	
+	ChooseTrainTrack(v, new_tile, exitdir, reachable, true, &res_made, mark_as_stuck, GetMaxNofExtendsForTrain(v, new_tile));
 
 	if (!res_made) {
 		/* Free the depot reservation as well. */
@@ -2779,7 +3311,11 @@ int Train::UpdateSpeed()
 			return this->DoUpdateSpeed(this->acceleration * (this->GetAccelerationStatus() == AS_BRAKE ? -4 : 2), 0, this->GetCurrentMaxSpeed());
 
 		case AM_REALISTIC:
-			return this->DoUpdateSpeed(this->GetAcceleration(), this->GetAccelerationStatus() == AS_BRAKE ? 0 : 2, this->GetCurrentMaxSpeed());
+			return this->DoUpdateSpeed(this->GetAcceleration(AM_REALISTIC), this->GetAccelerationStatus() == AS_BRAKE ? 0 : 2, this->GetCurrentMaxSpeed());
+			
+		case AM_YAAM:
+			planned_speed = this->GetCurrentMaxSpeed();
+			return this->DoUpdateSpeed(this->GetAcceleration(AM_YAAM), this->GetAccelerationStatus() && !(this->vehstatus & VS_STOPPED) && !HasBit(this->flags, VRF_REVERSING) && !HasBit(this->flags, VRF_TRAIN_STUCK) == AS_BRAKE ? planned_speed : 0, this->GetAccelerationStatus() == AS_BRAKE ? UINT16_MAX : planned_speed);
 	}
 }
 
@@ -2790,8 +3326,6 @@ int Train::UpdateSpeed()
  */
 static void TrainEnterStation(Train *v, StationID station)
 {
-	v->last_station_visited = station;
-
 	/* check if a train ever visited this station before */
 	Station *st = Station::Get(station);
 	if (!(st->had_vehicle_of_type & HVOT_TRAIN)) {
@@ -2810,7 +3344,7 @@ static void TrainEnterStation(Train *v, StationID station)
 	v->force_proceed = TFP_NONE;
 	SetWindowDirty(WC_VEHICLE_VIEW, v->index);
 
-	v->BeginLoading();
+	v->BeginLoading(station);
 
 	TriggerStationRandomisation(st, v->tile, SRT_TRAIN_ARRIVES);
 	TriggerStationAnimation(st, v->tile, SAT_TRAIN_ARRIVES);
@@ -2819,7 +3353,7 @@ static void TrainEnterStation(Train *v, StationID station)
 /* Check if the vehicle is compatible with the specified tile */
 static inline bool CheckCompatibleRail(const Train *v, TileIndex tile)
 {
-	return IsTileOwner(tile, v->owner) &&
+	return IsInfraTileUsageAllowed(VEH_TRAIN, v->owner, tile) &&
 			(!v->IsFrontEngine() || HasBit(v->compatible_railtypes, GetRailType(tile)));
 }
 
@@ -3130,7 +3664,7 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 				if (prev == NULL) {
 					/* Currently the locomotive is active. Determine which one of the
 					 * available tracks to choose */
-					chosen_track = TrackToTrackBits(ChooseTrainTrack(v, gp.new_tile, enterdir, bits, false, NULL, true));
+					chosen_track = TrackToTrackBits(ChooseTrainTrack(v, gp.new_tile, enterdir, bits, false, NULL, true, GetMaxNofExtendsForTrain(v, gp.new_tile)));
 					assert(chosen_track & (bits | GetReservedTrackbits(gp.new_tile)));
 
 					if (v->force_proceed != TFP_NONE && IsPlainRailTile(gp.new_tile) && HasSignals(gp.new_tile)) {
@@ -3158,11 +3692,19 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 						if (HasBit(v->flags, VRF_TRAIN_STUCK)) return false;
 
 						if (!HasSignalOnTrackdir(gp.new_tile, ReverseTrackdir(i))) {
+							if (v->cur_speed > 25) {
+							  v->breakdown_ctr = 2;
+							  v->breakdown_delay = 200;
+							}
 							v->cur_speed = 0;
 							v->subspeed = 0;
 							v->progress = 255 - 100;
 							if (!_settings_game.pf.reverse_at_signals || ++v->wait_counter < _settings_game.pf.wait_oneway_signal * 20) return false;
 						} else if (HasSignalOnTrackdir(gp.new_tile, i)) {
+							if (v->cur_speed > 25) {
+							  v->breakdown_ctr = 2;
+							  v->breakdown_delay = 200;
+							}
 							v->cur_speed = 0;
 							v->subspeed = 0;
 							v->progress = 255 - 10;
@@ -3244,9 +3786,21 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 				if (!HasBit(r, VETS_ENTERED_WORMHOLE)) {
 					Track track = FindFirstTrack(chosen_track);
 					Trackdir tdir = TrackDirectionToTrackdir(track, chosen_dir);
-					if (v->IsFrontEngine() && HasPbsSignalOnTrackdir(gp.new_tile, tdir)) {
-						SetSignalStateByTrackdir(gp.new_tile, tdir, SIGNAL_STATE_RED);
-						MarkTileDirtyByTile(gp.new_tile);
+					if (v->IsFrontEngine() && IsTileType(gp.new_tile, MP_RAILWAY) && HasSignalOnTrackdir(gp.new_tile, tdir)) {
+						SignalState signalState = GetSignalStateByTrackdir(gp.new_tile, tdir);
+						if (signalState == SIGNAL_STATE_YELLOW) {
+							v->max_signal_speed = v->yellow_signal_speed > 0 ? v->yellow_signal_speed : _settings_game.pf.yellow_speed * (GetRailType(gp.new_tile) == RAILTYPE_MAGLEV ? 2 : 1);
+						} else {
+							if (signalState == SIGNAL_STATE_DOUBLE_YELLOW) {
+								v->max_signal_speed = v->double_yellow_signal_speed > 0 ? v->double_yellow_signal_speed : _settings_game.pf.double_yellow_speed * (GetRailType(gp.new_tile) == RAILTYPE_MAGLEV ? 2 : 1);
+							} else {
+								v->max_signal_speed = UINT16_MAX;
+							}
+						}
+						if (HasPbsSignalOnTrackdir(gp.new_tile, tdir)) {
+							SetSignalStateByTrackdir(gp.new_tile, tdir, SIGNAL_STATE_RED);
+							MarkTileDirtyByTile(gp.new_tile);
+						}
 					}
 
 					/* Clear any track reservation when the last vehicle leaves the tile */
@@ -3305,10 +3859,14 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 					gp.old_tile = GetOtherTunnelBridgeEnd(gp.old_tile);
 				}
 			} else {
+				TileIndex old_tile = TileVirtXY(v->x_pos, v->y_pos);
 				v->x_pos = gp.x;
 				v->y_pos = gp.y;
 				VehicleUpdatePosition(v);
-				if ((v->vehstatus & VS_HIDDEN) == 0) VehicleUpdateViewport(v, true);
+				if (v->IsDrawn()) VehicleUpdateViewport(v, true);
+				if (v->IsFrontEngine() && old_tile != gp.new_tile) {					
+					CheckNextTrainTile(v);
+				}
 				continue;
 			}
 		}
@@ -3343,6 +3901,9 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 							!TryReserveRailTrack(gp.new_tile, FindFirstTrack(v->track))) ||
 							!TryPathReserve(v)) {
 						MarkTrainAsStuck(v);
+					} else {
+						/* we entered pbs block with only 1 reserved block, act like it */
+					  v->max_signal_speed = _settings_game.pf.yellow_speed * (GetRailType(gp.new_tile) == RAILTYPE_MAGLEV ? 2 : 1);
 					}
 				}
 			}
@@ -3582,10 +4143,12 @@ static bool TrainApproachingLineEnd(Train *v, bool signal, bool reverse)
 		return false;
 	}
 
-	/* slow down */
-	v->vehstatus |= VS_TRAIN_SLOWING;
-	uint16 break_speed = _breakdown_speeds[x & 0xF];
-	if (break_speed < v->cur_speed) v->cur_speed = break_speed;
+  if (_settings_game.vehicle.train_acceleration_model != AM_YAAM) {
+		/* slow down */
+		v->vehstatus |= VS_TRAIN_SLOWING;
+		uint16 break_speed = _breakdown_speeds[x & 0xF];
+		if (break_speed < v->cur_speed) v->cur_speed = break_speed;
+	}
 
 	return true;
 }
@@ -3703,6 +4266,17 @@ static bool TrainCheckIfLineEnds(Train *v, bool reverse)
 	return true;
 }
 
+// MYGUI
+Money Train::CalculateCurrentOverallValue() const
+{
+	Money ovr_value = 0;
+	const Train *v = this;
+	do {
+		ovr_value += v->value;
+	} while ( (v=v->GetNextVehicle()) != NULL );
+	return ovr_value;
+}
+// ENDMYGUI
 
 static bool TrainLocoHandler(Train *v, bool mode)
 {
@@ -3834,7 +4408,7 @@ static bool TrainLocoHandler(Train *v, bool mode)
 	}
 
 	for (Train *u = v; u != NULL; u = u->Next()) {
-		if ((u->vehstatus & VS_HIDDEN) != 0) continue;
+		if (!u->IsDrawn()) continue;
 
 		u->UpdateViewport(false, false);
 	}
@@ -3966,6 +4540,9 @@ void Train::OnNewDay()
 			/* running costs */
 			CommandCost cost(EXPENSES_TRAIN_RUN, this->GetRunningCost() * this->running_ticks / (DAYS_IN_YEAR  * DAY_TICKS));
 
+			/* sharing fee */
+			PayDailyTrackSharingFee(this);
+			
 			this->profit_this_year -= cost.GetCost();
 			this->running_ticks = 0;
 
@@ -3996,4 +4573,200 @@ Trackdir Train::GetVehicleTrackdir() const
 	}
 
 	return TrackDirectionToTrackdir(FindFirstTrack(this->track), this->direction);
+}
+
+int GetDisplayImageWidth(Train *t, Point *offset)
+{
+        int reference_width = TRAININFO_DEFAULT_VEHICLE_WIDTH;
+        int vehicle_pitch = 0;
+
+        const Engine *e = Engine::Get(t->engine_type);
+        if (e->grf_prop.grffile != NULL && is_custom_sprite(e->u.rail.image_index)) {
+                reference_width = e->grf_prop.grffile->traininfo_vehicle_width;
+                vehicle_pitch = e->grf_prop.grffile->traininfo_vehicle_pitch;
+        }
+
+        if (offset != NULL) {
+                offset->x = reference_width / 2;
+                offset->y = vehicle_pitch;
+        }
+        //printf("  refwid:%d  gdiw.cachedvehlen(%d):%d  ", reference_width, this->engine_type, this->gcache.cached_veh_length);
+        return t->gcache.cached_veh_length * reference_width / VEHICLE_LENGTH;
+}
+
+Train* CmdBuildVirtualRailWagon(const Engine *e)
+{
+        const RailVehicleInfo *rvi = &e->u.rail;
+
+        Train *v = new Train();
+
+        v->x_pos = 0;
+        v->y_pos = 0;
+
+        v->spritenum = rvi->image_index;
+
+        v->engine_type = e->index;
+        v->gcache.first_engine = INVALID_ENGINE; // needs to be set before first callback
+
+        v->direction = DIR_W;
+        v->tile = 0;//INVALID_TILE;
+
+        v->owner = _current_company;
+        v->track = TRACK_BIT_DEPOT;
+        v->vehstatus = VS_HIDDEN | VS_DEFPAL;
+
+        v->SetWagon();
+        v->SetFreeWagon();
+
+        v->cargo_type = e->GetDefaultCargoType();
+        v->cargo_cap = rvi->capacity;
+
+        v->railtype = rvi->railtype;
+
+        v->build_year = _cur_year;
+        v->cur_image = SPR_IMG_QUERY;
+        v->random_bits = VehicleRandomBits();
+
+        v->group_id = DEFAULT_GROUP;
+
+        AddArticulatedParts(v);
+
+        _new_vehicle_id = v->index;
+
+        // from revision r22xxx
+        // VehicleMove(v, false);
+        // new
+        VehicleUpdateViewport(v, false);
+
+        v->First()->ConsistChanged(false);
+        //UpdateTrainGroupID(v->First());
+
+        CheckConsistencyOfArticulatedVehicle(v);
+
+        /* The GVSF_VIRTUAL flag is used to prevent depot-tile sanity checks */
+        SetBit(v->subtype, GVSF_VIRTUAL);
+
+//      GroupStatistics::CountVehicle( v, -1 );
+
+        return v;
+}
+/**
+ * Build a railroad vehicle.
+ * @param tile     tile of the depot where rail-vehicle is built.
+ * @param flags    type of operation.
+ * @param e        the engine to build.
+ * @param data     bit 0 prevents any free cars from being added to the train.
+ * @param ret[out] the vehicle that has been built.
+ * @return the cost of this operation or an error.
+ */
+Train* CmdBuildVirtualRailVehicle(EngineID eid)
+{
+        if ( !IsEngineBuildable(eid, VEH_TRAIN, _current_company) ) return 0;
+        const Engine* e = Engine::Get(eid);
+        const RailVehicleInfo *rvi = &e->u.rail;
+
+        int num_vehicles = (e->u.rail.railveh_type == RAILVEH_MULTIHEAD ? 2 : 1) + CountArticulatedParts(eid, false);
+        if ( !Train::CanAllocateItem(num_vehicles) ) return 0;
+        if (rvi->railveh_type == RAILVEH_WAGON) return CmdBuildVirtualRailWagon(e);
+
+        Train *v = new Train();
+
+        v->x_pos = 0;
+        v->y_pos = 0;
+
+        v->direction = DIR_W;
+        v->tile = 0;//INVALID_TILE;
+        v->owner = _current_company;
+        v->track = TRACK_BIT_DEPOT;
+        v->vehstatus = VS_HIDDEN | VS_STOPPED | VS_DEFPAL;
+        v->spritenum = rvi->image_index;
+        v->cargo_type = e->GetDefaultCargoType();
+        v->cargo_cap = rvi->capacity;
+        v->last_station_visited = INVALID_STATION;
+
+        v->engine_type = e->index;
+        v->gcache.first_engine = INVALID_ENGINE; // needs to be set before first callback
+
+        v->reliability = e->reliability;
+        v->reliability_spd_dec = e->reliability_spd_dec;
+        v->max_age = e->GetLifeLengthInDays();
+
+        v->railtype = rvi->railtype;
+        _new_vehicle_id = v->index;
+
+        v->cur_image = SPR_IMG_QUERY;
+        v->random_bits = VehicleRandomBits();
+
+        v->group_id = DEFAULT_GROUP;
+
+        v->SetFrontEngine();
+        v->SetEngine();
+
+        // from revision r22xxx
+//      VehicleMove(v, false);
+        //      new
+        VehicleUpdateViewport(v, false);
+
+        if (rvi->railveh_type == RAILVEH_MULTIHEAD) {
+                AddRearEngineToMultiheadedTrain(v);
+        } else {
+                AddArticulatedParts(v);
+        }
+
+        v->ConsistChanged(false);
+        //UpdateTrainGroupID(v);
+
+        CheckConsistencyOfArticulatedVehicle(v);
+
+        SetBit(v->subtype, GVSF_VIRTUAL);
+
+//      GroupStatistics::CountVehicle( v, -1 );
+
+        return v;
+}
+
+/**
+ * Delete a train while it is visible.
+ * This happens when a company bankrupts when infrastructure sharing is enabled.
+ * @param v The train to delete.
+ */
+void DeleteVisibleTrain(Train *v)
+{
+	FreeTrainTrackReservation(v);
+	TileIndex crossing = TrainApproachingCrossingTile(v);
+
+	/* delete train from back to front */
+	Train *u;
+	Train *prev = v->Last();
+	do {
+		u = prev;
+		prev = u->Previous();
+		if (prev != NULL) prev->SetNext(NULL);
+
+		/* 'u' shouldn't be accessed after it has been deleted */
+		TileIndex tile = u->tile;
+		TrackBits trackbits = u->track;
+
+		delete u;
+
+		if (trackbits == TRACK_BIT_WORMHOLE) {
+			/* Vehicle is inside a wormhole, u->track contains no useful value then. */
+			trackbits = DiagDirToDiagTrackBits(GetTunnelBridgeDirection(tile));
+		}
+
+		Track track = TrackBitsToTrack(trackbits);
+		if (HasReservedTracks(tile, trackbits)) UnreserveRailTrack(tile, track);
+		if (IsLevelCrossingTile(tile)) UpdateLevelCrossing(tile);
+
+		/* Update signals */
+		if (IsTileType(tile, MP_TUNNELBRIDGE) || IsRailDepotTile(tile)) {
+			AddSideToSignalBuffer(tile, INVALID_DIAGDIR, GetTileOwner(tile));
+		} else {
+			AddTrackToSignalBuffer(tile, track, GetTileOwner(tile));
+		}
+	} while (prev != NULL);
+
+	if (crossing != INVALID_TILE) UpdateLevelCrossing(crossing);
+
+	UpdateSignalsInBuffer();
 }

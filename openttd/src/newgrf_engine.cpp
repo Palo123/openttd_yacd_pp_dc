@@ -565,7 +565,7 @@ static uint32 VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *object,
 
 			{
 				const Vehicle *w = v->Next();
-				uint16 altitude = v->z_pos - w->z_pos; // Aircraft height - shadow height
+				uint32 altitude = (uint32)(v->z_pos - w->z_pos); // Aircraft height - shadow height
 				byte airporttype = ATP_TTDP_LARGE;
 
 				const Station *st = GetTargetAirportIfValid(Aircraft::From(v));
@@ -1045,6 +1045,11 @@ SpriteID GetRotorOverrideSprite(EngineID engine, const Aircraft *v, bool info_vi
 	return group->GetResult() + (info_view ? 0 : (v->Next()->Next()->state % group->GetNumResults()));
 }
 
+//void NewVehicleResolverWrapper(ResolverObject *res, EngineID eid, EngineImageType image_type)
+//{
+////	NewVehicleResolver(res, eid, 0);
+//	VehicleResolverObject object(res, eid, false, CBID_NO_CALLBACK, image_type);
+//}
 
 /**
  * Check if a wagon is currently using a wagon override
@@ -1307,3 +1312,4 @@ void FillNewGRFVehicleCache(const Vehicle *v)
 	/* Make sure really all bits are set. */
 	assert(v->grf_cache.cache_valid == (1 << NCVV_END) - 1);
 }
+

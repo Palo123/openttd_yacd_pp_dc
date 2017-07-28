@@ -744,6 +744,15 @@ public:
 	virtual void OnPlaceMouseUp(ViewportPlaceMethod select_method, ViewportDragDropSelectionProcess select_proc, Point pt, TileIndex start_tile, TileIndex end_tile) {}
 
 	/**
+	 * The user scrolling the mouse wheel while the tile highlight mode
+	 * has been set.
+	 * @param pt         the exact point on the map where the mouse is.
+	 * @param mousewheel the amount of scrolls.
+	 * @return #ES_HANDLED to prevent viewport from zooming.
+	 */
+	virtual EventState OnPlaceMouseWheel(Point pt, int mousewheel) { return ES_NOT_HANDLED; }
+
+	/**
 	 * The user moves over the map when a tile highlight mode has been set
 	 * when the special mouse mode has been set to 'PRESIZE' mode. An
 	 * example of this is the tile highlight for dock building.

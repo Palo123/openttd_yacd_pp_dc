@@ -104,6 +104,7 @@ enum WindowClass {
 	 */
 	WC_ERRMSG,
 
+	WC_WATCH_COMPANY,
 	/**
 	 * Tooltip window; %Window numbers:
 	 *   - 0 = #ToolTipsWidgets
@@ -217,6 +218,12 @@ enum WindowClass {
 	 *   - #VehicleID = #VehicleTimetableWidgets
 	 */
 	WC_VEHICLE_TIMETABLE,
+
+	/**
+	 * Vehicle trip history; %Window numbers:
+	 *   - #VehicleID = #VehicleTripHistoryWidgets
+	 */
+	WC_VEHICLE_TRIP_HISTORY,
 
 	/**
 	 * Company colour selection; %Window numbers:
@@ -663,6 +670,17 @@ enum WindowClass {
 	 *   - 0 = #SpriteAlignerWidgets
 	 */
 	WC_SPRITE_ALIGNER,
+
+    /**
+     * Departure boards
+     */
+	WC_DEPARTURES_BOARD,
+
+	WC_TEMPLATEGUI_MAIN,
+	WC_TEMPLATEGUI_RPLALL,
+	WC_BUILD_VIRTUAL_TRAIN,
+	WC_CREATE_TEMPLATE,
+
 
 	WC_INVALID = 0xFFFF, ///< Invalid window.
 };

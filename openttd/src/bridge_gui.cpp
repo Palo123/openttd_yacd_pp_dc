@@ -24,6 +24,7 @@
 #include "cmd_helper.h"
 #include "tunnelbridge_map.h"
 #include "road_gui.h"
+#include "tilehighlight_func.h"
 
 #include "widgets/bridge_widget.h"
 
@@ -116,8 +117,10 @@ private:
 			case TRANSPORT_ROAD: _last_roadbridge_type = this->bridges->Get(i)->index; break;
 			default: break;
 		}
-		DoCommandP(this->end_tile, this->start_tile, this->type | this->bridges->Get(i)->index,
-					CMD_BUILD_BRIDGE | CMD_MSG(STR_ERROR_CAN_T_BUILD_BRIDGE_HERE), CcBuildBridge);
+		if (DoCommandP(this->end_tile, this->start_tile, this->type | this->bridges->Get(i)->index,
+				CMD_BUILD_BRIDGE | CMD_MSG(STR_ERROR_CAN_T_BUILD_BRIDGE_HERE), CcBuildBridge)) {
+			StoreRailPlacementEndpoints(this->start_tile, this->end_tile, (TileX(this->start_tile) == TileX(this->end_tile)) ? TRACK_Y : TRACK_X, false);
+		}
 	}
 
 	/** Sort the builable bridges */

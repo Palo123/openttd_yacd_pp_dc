@@ -259,11 +259,13 @@ char *GetStringWithArgs(char *buffr, StringID string, StringParameters *args, co
 			return FormatString(buffr, GetGRFStringPtr(index + 0x1000), args, last, case_index);
 	}
 
+//DC unkomment fagyás miatt
 	if (index >= _langtab_num[tab]) {
 		if (game_script) {
 			return GetStringWithArgs(buffr, STR_UNDEFINED, args, last);
 		}
 		error("String 0x%X is invalid. You are probably using an old version of the .lng file.\n", string);
+//		DEBUG(sprite, 1, "String 0x%X is invalid. You are probably using an old version of the .lng file.\n", string);
 	}
 
 	return FormatString(buffr, GetStringPtr(string), args, last, case_index);
@@ -414,6 +416,29 @@ static char *FormatBytes(char *buff, int64 number, const char *last)
 	buff += seprintf(buff, last, " %sB", iec_prefixes[id]);
 
 	return buff;
+}
+
+static char *FormatWallClockString(char *buff, DateTicks ticks, const char *last, bool show_date, uint case_index)
+{
+	Minutes minutes = ticks / _settings_client.gui.ticks_per_minute + _settings_client.gui.clock_offset;
+	char hour[3], minute[3];
+	snprintf(hour,   lengthof(hour),   "%02i", MINUTES_HOUR(minutes)  );
+	snprintf(minute, lengthof(minute), "%02i", MINUTES_MINUTE(minutes));
+	if (show_date) {
+		int64 args[3] = { (int64)hour, (int64)minute, (int64)ticks / DAY_TICKS_DAY_LENGTH };
+		if (_settings_client.gui.date_with_time == 1) {
+			YearMonthDay ymd;
+			ConvertDateToYMD(args[2], &ymd);
+			args[2] = ymd.year;
+		}
+
+		StringParameters tmp_params(args);
+		return FormatString(buff, GetStringPtr(STR_FORMAT_DATE_MINUTES + _settings_client.gui.date_with_time), &tmp_params, last, case_index);
+	} else {
+		int64 args[2] = { (int64)hour, (int64)minute };
+		StringParameters tmp_params(args);
+		return FormatString(buff, GetStringPtr(STR_FORMAT_DATE_MINUTES), &tmp_params, last, case_index);
+	}
 }
 
 static char *FormatYmdString(char *buff, Date date, const char *last, uint case_index)
@@ -1160,6 +1185,8 @@ static char *FormatString(char *buff, const char *str_arg, StringParameters *arg
 
 				const CargoSpec *cs;
 				FOR_ALL_SORTED_CARGOSPECS(cs) {
+					int n;
+
 					if (!HasBit(cmask, cs->Index())) continue;
 
 					if (buff >= last - 2) break; // ',' and ' '
@@ -1173,6 +1200,20 @@ static char *FormatString(char *buff, const char *str_arg, StringParameters *arg
 					}
 
 					buff = GetStringWithArgs(buff, cs->name, args, last, next_substr_case_index, game_script);
+
+					if (args->GetParam(1) != SCC_CARGO_LIST || !_settings_client.gui.forecast_display) {
+						continue;
+					}
+
+					/* Shows only passengers and mails since other cargoes provide no useful value. (all 1) */
+					if (cs->Index() == CT_PASSENGERS || cs->Index() == CT_MAIL) {
+						if (cs->Index() == CT_PASSENGERS) {
+							n = sprintf(buff, "(%d)", args->GetParam(2));
+						} else {
+							n = sprintf(buff, "(%d)", args->GetParam(3));
+						}
+						buff += n;
+					}
 				}
 
 				/* If first is still true then no cargo is accepted */
@@ -1207,6 +1248,42 @@ static char *FormatString(char *buff, const char *str_arg, StringParameters *arg
 				buff = FormatYmdString(buff, args->GetInt32(SCC_DATE_LONG), last, next_substr_case_index);
 				next_substr_case_index = 0;
 				break;
+
+			case SCC_DATE_WALLCLOCK_LONG: { // {DATE_WALLCLOCK_LONG}
+				if (_settings_client.gui.time_in_minutes) {
+					buff = FormatWallClockString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_LONG), last, _settings_client.gui.date_with_time, next_substr_case_index);
+				} else {
+					buff = FormatYmdString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_LONG) / DAY_TICKS_DAY_LENGTH, last, next_substr_case_index);
+				}
+				break;
+			}
+
+			case SCC_DATE_WALLCLOCK_SHORT: { // {DATE_WALLCLOCK_SHORT}
+				if (_settings_client.gui.time_in_minutes) {
+					buff = FormatWallClockString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_SHORT), last, _settings_client.gui.date_with_time, next_substr_case_index);
+				} else {
+					buff = FormatYmdString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_SHORT) / DAY_TICKS_DAY_LENGTH, last, next_substr_case_index);
+				}
+				break;
+			}
+
+			case SCC_DATE_WALLCLOCK_TINY: { // {DATE_WALLCLOCK_TINY}
+				if (_settings_client.gui.time_in_minutes) {
+					buff = FormatWallClockString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_TINY), last, false, next_substr_case_index);
+				} else {
+					buff = FormatTinyOrISODate(buff, args->GetInt64(SCC_DATE_WALLCLOCK_TINY) / DAY_TICKS_DAY_LENGTH, STR_FORMAT_DATE_TINY, last);
+				}
+				break;
+			}
+
+			case SCC_DATE_WALLCLOCK_ISO: { // {DATE_WALLCLOCK_ISO}
+				if (_settings_client.gui.time_in_minutes) {
+					buff = FormatWallClockString(buff, args->GetInt64(SCC_DATE_WALLCLOCK_ISO), last, false, next_substr_case_index);
+				} else {
+					buff = FormatTinyOrISODate(buff, args->GetInt64(SCC_DATE_WALLCLOCK_ISO) / DAY_TICKS_DAY_LENGTH, STR_FORMAT_DATE_ISO, last);
+				}
+				break;
+			}
 
 			case SCC_DATE_ISO: // {DATE_ISO}
 				buff = FormatTinyOrISODate(buff, args->GetInt32(), STR_FORMAT_DATE_ISO, last);
@@ -1472,12 +1549,22 @@ static char *FormatString(char *buff, const char *str_arg, StringParameters *arg
 					int64 args_array[] = {(uint64)(size_t)v->name};
 					StringParameters tmp_params(args_array);
 					buff = GetStringWithArgs(buff, STR_JUST_RAW_STRING, &tmp_params, last);
-				} else {
+				}
+				 else {
 					int64 args_array[] = {v->unitnumber};
 					StringParameters tmp_params(args_array);
-
 					StringID str;
 					switch (v->type) {
+
+/*2szer is itt fagyott le
+Error: NOT_REACHED triggered at line 1540 of /tmp/openttd-1.3.2-DC-atc/src/strings.cpp
+Crash encountered, generating crash log...
+						default: NULL;
+						default: break;
+Az a tapasztalat, hogy csak akkor fagy le, ha aktív a menetrend az állomáson, azaz éppen nézzük
+*/
+//						default: str = STR_SV_TRAIN_NAME;
+// r26020 "default: NOT_REACHED();" changed to "default: str = STR_INVALID_VEHICLE; break;"
 						default:           str = STR_INVALID_VEHICLE; break;
 						case VEH_TRAIN:    str = STR_SV_TRAIN_NAME; break;
 						case VEH_ROAD:     str = STR_SV_ROAD_VEHICLE_NAME; break;
@@ -1818,6 +1905,7 @@ bool ReadLanguagePack(const LanguageMetadata *lang)
 	/* Some lists need to be sorted again after a language change. */
 	ReconsiderGameScriptLanguage();
 	InitializeSortedCargoSpecs();
+	BuildCargoTypesLegend();
 	SortIndustryTypes();
 	BuildIndustriesLegend();
 	SortNetworkLanguages();

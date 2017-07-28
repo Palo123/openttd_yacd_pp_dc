@@ -19,10 +19,14 @@ extern Month     _cur_month;
 extern Date      _date;
 extern DateFract _date_fract;
 extern uint16 _tick_counter;
+extern uint8 _tick_skip_counter;
 
 void SetDate(Date date, DateFract fract);
 void ConvertDateToYMD(Date date, YearMonthDay *ymd);
 Date ConvertYMDToDate(Year year, Month month, Day day);
+Ticks GetCurrentTickCount();
+
+#define YMD_TO_DATE(ymd) (ConvertYMDToDate(ymd.year, ymd.month, ymd.day))
 
 /**
  * Checks whether the given year is a leap year or not.

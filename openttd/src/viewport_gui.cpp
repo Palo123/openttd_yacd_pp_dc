@@ -16,11 +16,14 @@
 #include "strings_func.h"
 #include "zoom_func.h"
 #include "window_func.h"
+#include "industry.h"
+#include "town_map.h"
 
 #include "widgets/viewport_widget.h"
 
 #include "table/strings.h"
 #include "table/sprites.h"
+
 
 /* Extra ViewPort Window Stuff */
 static const NWidgetPart _nested_extra_view_port_widgets[] = {
@@ -137,6 +140,60 @@ public:
 	{
 		if (_settings_client.gui.scrollwheel_scrolling == 0) {
 			ZoomInOrOutToCursorWindow(wheel < 0, this);
+		}
+	}
+	
+	virtual void OnMouseOver(Point pt, int widget)
+	{
+		/* Show tooltip with last month production or town name */
+		if (pt.x != -1) {
+			TileIndex tile;
+			const bool viewport_is_in_map_mode = (this->viewport->zoom >= ZOOM_LVL_MAX);
+			if (viewport_is_in_map_mode) {
+				NWidgetViewport *nvp = this->GetWidget<NWidgetViewport>(WID_EV_VIEWPORT);
+				const int a = ((ScaleByZoom(pt.x - nvp->pos_x, this->viewport->zoom) + this->viewport->virtual_left) >> 2) / ZOOM_LVL_BASE;
+				const int b = ((ScaleByZoom(pt.y - nvp->pos_y, this->viewport->zoom) + this->viewport->virtual_top) >> 1) / ZOOM_LVL_BASE;
+				tile = TileVirtXY(b - a, b + a);
+			} else {
+				const Point p = GetTileBelowCursor();
+				tile = TileVirtXY(p.x, p.y);
+			}
+			if (tile >= MapSize()) return;
+
+			switch (GetTileType(tile)) {
+				case MP_ROAD:
+					if (IsRoadDepot(tile)) return;
+					/* FALL THROUGH */
+				case MP_HOUSE: {
+					if (HasBit(_display_opt, DO_SHOW_TOWN_NAMES)) return; // No need for a town name tooltip when it is already displayed
+					if (!viewport_is_in_map_mode) return;
+					const TownID tid = GetTownIndex(tile);
+					if (!tid) return;
+					SetDParam(0, tid);
+					GuiShowTooltips(this, STR_TOWN_NAME_TOOLTIP, 0, NULL, TCC_HOVER);
+					break;
+				}
+				case MP_INDUSTRY: {
+					const Industry *ind = Industry::GetByTile(tile);
+					const IndustrySpec *indsp = GetIndustrySpec(ind->type);
+
+					StringID str = STR_INDUSTRY_VIEW_TRANSPORTED_TOOLTIP;
+					uint prm_count = 0;
+					SetDParam(prm_count++, indsp->name);
+					for (byte i = 0; i < lengthof(ind->produced_cargo); i++) {
+						if (ind->produced_cargo[i] != CT_INVALID) {
+							SetDParam(prm_count++, ind->produced_cargo[i]);
+							SetDParam(prm_count++, ind->last_month_production[i]);
+							SetDParam(prm_count++, ToPercent8(ind->last_month_pct_transported[i]));
+							str++;
+						}
+					}
+					GuiShowTooltips(this, str, 0, NULL, TCC_HOVER);
+					break;
+				}
+				default:
+					return;
+			}
 		}
 	}
 

@@ -120,6 +120,7 @@ struct IndustrySpec {
 	IndustryBehaviour behaviour;          ///< How this industry will behave, and how others entities can use it
 	byte map_colour;                      ///< colour used for the small map
 	StringID name;                        ///< Displayed name of the industry
+	StringID abbrev;                      ///< Abbreviation of the industry name
 	StringID new_industry_text;           ///< Message appearing when the industry is built
 	StringID closure_text;                ///< Message appearing when the industry closes
 	StringID production_up_text;          ///< Message appearing when the industry's production is increasing

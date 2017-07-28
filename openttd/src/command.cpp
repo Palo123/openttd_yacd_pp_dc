@@ -25,6 +25,8 @@
 #include "company_base.h"
 #include "signal_func.h"
 #include "core/backup_type.hpp"
+#include "window_func.h"
+#include "watch_gui.h"
 #include "object_base.h"
 
 #include "table/strings.h"
@@ -32,6 +34,7 @@
 CommandProc CmdBuildRailroadTrack;
 CommandProc CmdRemoveRailroadTrack;
 CommandProc CmdBuildSingleRail;
+CommandProc CmdBuildSingleRails;
 CommandProc CmdRemoveSingleRail;
 
 CommandProc CmdLandscapeClear;
@@ -48,6 +51,7 @@ CommandProc CmdRemoveSingleSignal;
 CommandProc CmdTerraformLand;
 
 CommandProc CmdBuildObject;
+CommandProc CmdBuyLand;
 CommandProc CmdSellLandArea;
 
 CommandProc CmdBuildTunnel;
@@ -168,6 +172,7 @@ CommandProc CmdDepotSellAllVehicles;
 CommandProc CmdDepotMassAutoReplace;
 
 CommandProc CmdCreateGroup;
+CommandProc CmdCreateGroupSpecificName;
 CommandProc CmdRenameGroup;
 CommandProc CmdDeleteGroup;
 CommandProc CmdAddVehicleGroup;
@@ -180,8 +185,17 @@ CommandProc CmdChangeTimetable;
 CommandProc CmdSetVehicleOnTime;
 CommandProc CmdAutofillTimetable;
 CommandProc CmdSetTimetableStart;
+CommandProc CmdReinitSeparation;
 
 CommandProc CmdOpenCloseAirport;
+CommandProc CmdChangeStationAcceptance;
+
+CommandProc CmdBuildTrafficLights;
+CommandProc CmdRemoveTrafficLights;
+
+CommandProc CmdInstantCopyPaste;
+CommandProc CmdCopyToClipboard;
+CommandProc CmdPasteFromClipboard;
 
 #define DEF_CMD(proc, flags, type) {proc, #proc, (CommandFlags)flags, type}
 
@@ -196,6 +210,7 @@ static const Command _command_proc_table[] = {
 	DEF_CMD(CmdBuildRailroadTrack,       CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_RAILROAD_TRACK
 	DEF_CMD(CmdRemoveRailroadTrack,                     CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_REMOVE_RAILROAD_TRACK
 	DEF_CMD(CmdBuildSingleRail,          CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_SINGLE_RAIL
+	DEF_CMD(CmdBuildSingleRails,         CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_MULTI_RAIL
 	DEF_CMD(CmdRemoveSingleRail,                        CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_REMOVE_SINGLE_RAIL
 	DEF_CMD(CmdLandscapeClear,                                 0, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_LANDSCAPE_CLEAR
 	DEF_CMD(CmdBuildBridge,  CMD_DEITY | CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_BRIDGE
@@ -205,6 +220,7 @@ static const Command _command_proc_table[] = {
 	DEF_CMD(CmdRemoveSingleSignal,                      CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_REMOVE_SIGNALS
 	DEF_CMD(CmdTerraformLand,           CMD_ALL_TILES | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_TERRAFORM_LAND
 	DEF_CMD(CmdBuildObject,              CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_OBJECT
+	DEF_CMD(CmdBuyLand,                  CMD_NO_WATER | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUY_LAND
 	DEF_CMD(CmdBuildTunnel,                 CMD_DEITY | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_TUNNEL
 	DEF_CMD(CmdRemoveFromRailStation,                          0, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_REMOVE_FROM_RAIL_STATION
 	DEF_CMD(CmdConvertRail,                                    0, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_CONVERT_RAILD
@@ -313,6 +329,7 @@ static const Command _command_proc_table[] = {
 	DEF_CMD(CmdDepotSellAllVehicles,                           0, CMDT_VEHICLE_CONSTRUCTION  ), // CMD_DEPOT_SELL_ALL_VEHICLES
 	DEF_CMD(CmdDepotMassAutoReplace,                           0, CMDT_VEHICLE_CONSTRUCTION  ), // CMD_DEPOT_MASS_AUTOREPLACE
 	DEF_CMD(CmdCreateGroup,                                    0, CMDT_ROUTE_MANAGEMENT      ), // CMD_CREATE_GROUP
+	DEF_CMD(CmdCreateGroupSpecificName,                        0, CMDT_ROUTE_MANAGEMENT      ), // CMD_CREATE_GROUP_SPECIFIC_NAME
 	DEF_CMD(CmdDeleteGroup,                                    0, CMDT_ROUTE_MANAGEMENT      ), // CMD_DELETE_GROUP
 	DEF_CMD(CmdRenameGroup,                                    0, CMDT_OTHER_MANAGEMENT      ), // CMD_RENAME_GROUP
 	DEF_CMD(CmdAddVehicleGroup,                                0, CMDT_ROUTE_MANAGEMENT      ), // CMD_ADD_VEHICLE_GROUP
@@ -324,8 +341,17 @@ static const Command _command_proc_table[] = {
 	DEF_CMD(CmdSetVehicleOnTime,                               0, CMDT_ROUTE_MANAGEMENT      ), // CMD_SET_VEHICLE_ON_TIME
 	DEF_CMD(CmdAutofillTimetable,                              0, CMDT_ROUTE_MANAGEMENT      ), // CMD_AUTOFILL_TIMETABLE
 	DEF_CMD(CmdSetTimetableStart,                              0, CMDT_ROUTE_MANAGEMENT      ), // CMD_SET_TIMETABLE_START
+	DEF_CMD(CmdReinitSeparation,                               0, CMDT_ROUTE_MANAGEMENT      ), // CMD_REINIT_SEPARATION
 
 	DEF_CMD(CmdOpenCloseAirport,                               0, CMDT_ROUTE_MANAGEMENT      ), // CMD_OPEN_CLOSE_AIRPORT
+	DEF_CMD(CmdChangeStationAcceptance,                        0, CMDT_OTHER_MANAGEMENT      ), // CMD_CHANGE_STATION_ACCEPTANCE
+
+	DEF_CMD(CmdBuildTrafficLights,                             0, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_BUILD_TRAFFICLIGHTS
+	DEF_CMD(CmdRemoveTrafficLights,                            0, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_REMOVE_TRAFFICLIGHTS
+
+       DEF_CMD(CmdCopyToClipboard,                      CMD_OFFLINE, CMDT_OTHER_MANAGEMENT      ), // CMD_COPY_TO_CLIPBOARD
+       DEF_CMD(CmdPasteFromClipboard,CMD_OFFLINE|CMD_NO_TEST|CMD_AUTO,CMDT_LANDSCAPE_CONSTRUCTION),// CMD_PASTE_FROM_CLIPBOARD
+       DEF_CMD(CmdInstantCopyPaste,          CMD_NO_TEST | CMD_AUTO, CMDT_LANDSCAPE_CONSTRUCTION), // CMD_INSTANT_COPY_PASTE
 };
 
 /*!
@@ -441,6 +467,10 @@ CommandCost DoCommand(TileIndex tile, uint32 p1, uint32 p2, DoCommandFlag flags,
 		SetTownRatingTestMode(true);
 		res = proc(tile, flags & ~DC_EXEC, p1, p2, text);
 		SetTownRatingTestMode(false);
+               /* Multiply command cost according to day length balance type. */
+               if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+                       res.AffectCost(_settings_game.economy.day_length_balance_factor);
+               }
 		if (res.Failed()) {
 			goto error;
 		}
@@ -462,6 +492,12 @@ CommandCost DoCommand(TileIndex tile, uint32 p1, uint32 p2, DoCommandFlag flags,
 	 * themselves to the cost object at some point */
 	if (_docommand_recursive == 1) _cleared_object_areas.Clear();
 	res = proc(tile, flags, p1, p2, text);
+
+       /* Multiply command cost according to day length balance type. */
+       if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS) {
+               res.AffectCost(_settings_game.economy.day_length_balance_factor);
+       }
+
 	if (res.Failed()) {
 error:
 		_docommand_recursive--;
@@ -644,6 +680,8 @@ CommandCost DoCommandPInternal(TileIndex tile, uint32 p1, uint32 p2, uint32 cmd,
 	ClearStorageChanges(false);
 	CommandCost res = proc(tile, flags, p1, p2, text);
 	SetTownRatingTestMode(false);
+               /* Already multiplied in DoCommand, so just flag that affected by day length. */
+               res.AffectCost();
 
 	/* Make sure we're not messing things up here. */
 	assert(exec_as_spectator ? _current_company == COMPANY_SPECTATOR : cur_company.Verify());
@@ -687,6 +725,8 @@ CommandCost DoCommandPInternal(TileIndex tile, uint32 p1, uint32 p2, uint32 cmd,
 	_cleared_object_areas.Clear();
 	ClearStorageChanges(false);
 	CommandCost res2 = proc(tile, flags | DC_EXEC, p1, p2, text);
+       /* Already multiplied in DoCommand, so just flag that affected by day length. */
+       res2.AffectCost();
 
 	if (cmd_id == CMD_COMPANY_CTRL) {
 		cur_company.Trash();
@@ -724,6 +764,16 @@ CommandCost DoCommandPInternal(TileIndex tile, uint32 p1, uint32 p2, uint32 cmd,
 	if (tile != 0) {
 		Company *c = Company::GetIfValid(_current_company);
 		if (c != NULL) c->last_build_coordinate = tile;
+	}
+
+	/* Send Tile Number to Watching Company Windows */
+	int watching_window = 0;
+	WatchCompany *wc;
+	wc = dynamic_cast<WatchCompany*>(FindWindowById(WC_WATCH_COMPANY, watching_window));
+	while (wc!=NULL) {
+		wc->OnDoCommand( _current_company, tile );
+		watching_window++;
+		wc = dynamic_cast<WatchCompany*>(FindWindowById(WC_WATCH_COMPANY, watching_window));
 	}
 
 	SubtractMoneyFromCompany(res2);

@@ -23,6 +23,7 @@
 #include "../../widgets/bridge_widget.h"
 #include "../../widgets/build_vehicle_widget.h"
 #include "../../widgets/cheat_widget.h"
+#include "../../widgets/clipboard_widget.h"
 #include "../../widgets/company_widget.h"
 #include "../../widgets/console_widget.h"
 #include "../../widgets/date_widget.h"
@@ -967,6 +968,42 @@ public:
 	/** Widgets of the #CheatWindow class.. */
 	enum CheatWidgets {
 		WID_C_PANEL                                  = ::WID_C_PANEL,                                  ///< Panel where all cheats are shown in.
+	};
+
+	/* automatically generated from ../../widgets/clipboard_widget.h */
+	/** Widgets of the #ClipboardToolbarWindow class. */
+	enum ClipboardToolbarWidgets {
+		WID_CT_CLIPBOARD_1                           = ::WID_CT_CLIPBOARD_1,                           ///< Button to switch to clipboard #1
+		WID_CT_CLIPBOARD_2                           = ::WID_CT_CLIPBOARD_2,                           ///< Button to switch to clipboard #2
+		WID_CT_CLIPBOARD_3                           = ::WID_CT_CLIPBOARD_3,                           ///< Button to switch to clipboard #3
+		WID_CT_CLIPBOARD_4                           = ::WID_CT_CLIPBOARD_4,                           ///< Button to switch to clipboard #4
+
+		WID_CT_COPY                                  = ::WID_CT_COPY,                                  ///< Copy button (single player)
+		WID_CT_PASTE                                 = ::WID_CT_PASTE,                                 ///< Paste button (single player)
+
+		WID_CT_PASTE_FLAG_BUTTON_BEGIN               = ::WID_CT_PASTE_FLAG_BUTTON_BEGIN,               ///< First button to toggle copy-paste flag
+		WID_CT_WITH_RAIL                             = ::WID_CT_WITH_RAIL,                             ///< Toggle rails button
+		WID_CT_WITH_ROAD                             = ::WID_CT_WITH_ROAD,                             ///< Toggle roads button
+		WID_CT_WITH_WATER                            = ::WID_CT_WITH_WATER,                            ///< Toggle water button
+		WID_CT_WITH_AIR                              = ::WID_CT_WITH_AIR,                              ///< Toggle air button
+		WID_CT_MIRROR_SIGNALS                        = ::WID_CT_MIRROR_SIGNALS,                        ///< Toggle signal mirrorig button
+		WID_CT_UPGRADE_BRIDGES                       = ::WID_CT_UPGRADE_BRIDGES,                       ///< Toggle bridge upgrading button
+		WID_CT_PASTE_FLAG_BUTTON_END                 = ::WID_CT_PASTE_FLAG_BUTTON_END,                 ///< Past-the-last button to toggle copy-paste flag
+
+		WID_CT_CONVERT_RAILTYPE                      = ::WID_CT_CONVERT_RAILTYPE,                      ///< Button to select railtype to convert to
+
+		WID_CT_TERRAFORM                             = ::WID_CT_TERRAFORM,                             ///< Button to select terraforming mode
+
+		WID_CT_TRANSFORMATION                        = ::WID_CT_TRANSFORMATION,                        ///< Button to show/reset clipboard transformation
+		WID_CT_ROTATE_LEFT                           = ::WID_CT_ROTATE_LEFT,                           ///< Rotate left button
+		WID_CT_ROTATE_RIGHT                          = ::WID_CT_ROTATE_RIGHT,                          ///< Rotate right button
+		WID_CT_REFLECT_NE_SW                         = ::WID_CT_REFLECT_NE_SW,                         ///< Reflect against NE-SW axis button
+		WID_CT_REFLECT_NW_SE                         = ::WID_CT_REFLECT_NW_SE,                         ///< Reflect against NW-SE axis button
+
+		WID_CT_HEIGHT_DIFF_GLYPH                     = ::WID_CT_HEIGHT_DIFF_GLYPH,                     ///< Image in front of buttons to increase/decrease height level
+		WID_CT_HEIGHT_DIFF                           = ::WID_CT_HEIGHT_DIFF,                           ///< Panel with buttons to increase/decrease height level
+		WID_CT_HEIGHT_DIFF_INCREASE                  = ::WID_CT_HEIGHT_DIFF_INCREASE,                  ///< Button to increase height level
+		WID_CT_HEIGHT_DIFF_DECREASE                  = ::WID_CT_HEIGHT_DIFF_DECREASE,                  ///< Button to decrease height level
 	};
 
 	/* automatically generated from ../../widgets/company_widget.h */
@@ -2228,6 +2265,7 @@ public:
 		WID_TT_LOWER_LAND                            = ::WID_TT_LOWER_LAND,                            ///< Lower land button.
 		WID_TT_RAISE_LAND                            = ::WID_TT_RAISE_LAND,                            ///< Raise land button.
 		WID_TT_LEVEL_LAND                            = ::WID_TT_LEVEL_LAND,                            ///< Level land button.
+		WID_TT_CLIPBOARD                             = ::WID_TT_CLIPBOARD,                             ///< Button to open the clipboard toolbar
 		WID_TT_DEMOLISH                              = ::WID_TT_DEMOLISH,                              ///< Demolish aka dynamite button.
 		WID_TT_BUY_LAND                              = ::WID_TT_BUY_LAND,                              ///< Buy land button.
 		WID_TT_PLANT_TREES                           = ::WID_TT_PLANT_TREES,                           ///< Plant trees button (note: opens separate window, no place-push-button).

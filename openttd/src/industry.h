@@ -16,6 +16,7 @@
 #include "subsidy_type.h"
 #include "industry_map.h"
 #include "tilearea_type.h"
+#include "cargodest_base.h"
 
 
 typedef Pool<Industry, IndustryID, 64, 64000> IndustryPool;
@@ -36,7 +37,7 @@ enum ProductionLevels {
 /**
  * Defines the internal data of a functional industry.
  */
-struct Industry : IndustryPool::PoolItem<&_industry_pool> {
+struct Industry : IndustryPool::PoolItem<&_industry_pool>, CargoSourceSink {
 	TileArea location;                  ///< Location of the industry
 	Town *town;                         ///< Nearest town
 	CargoID produced_cargo[2];          ///< 2 production cargo slots
@@ -45,11 +46,13 @@ struct Industry : IndustryPool::PoolItem<&_industry_pool> {
 	byte production_rate[2];            ///< production rate for each cargo
 	byte prod_level;                    ///< general production level
 	CargoID accepts_cargo[3];           ///< 3 input cargo slots
+	uint32 produced_accepted_mask;      ///< Bit mask of all cargoes that are always accepted and also produced
 	uint16 this_month_production[2];    ///< stats of this month's production per cargo
 	uint16 this_month_transported[2];   ///< stats of this month's transport per cargo
 	byte last_month_pct_transported[2]; ///< percentage transported per cargo in the last full month
 	uint16 last_month_production[2];    ///< total units produced per cargo in the last full month
 	uint16 last_month_transported[2];   ///< total units transported per cargo in the last full month
+	uint16 average_production[2];       ///< average production during the last months
 	uint16 counter;                     ///< used for animation and/or production (if available cargo)
 
 	IndustryType type;                  ///< type of industry.
@@ -76,6 +79,41 @@ struct Industry : IndustryPool::PoolItem<&_industry_pool> {
 
 	void RecomputeProductionMultipliers();
 
+	/* virtual */ SourceType GetType() const
+	{
+		return ST_INDUSTRY;
+	}
+
+	/* virtual */ SourceID GetID() const
+	{
+		return this->index;
+	}
+
+	/* virtual */ bool AcceptsCargo(CargoID cid) const
+	{
+		if (HasBit(this->produced_accepted_mask, cid)) return true;
+
+		for (uint i = 0; i < lengthof(this->accepts_cargo); i++) {
+			if (this->accepts_cargo[i] == cid) return true;
+		}
+		return false;
+	}
+
+	/* virtual */ bool SuppliesCargo(CargoID cid) const
+	{
+		for (uint i = 0; i < lengthof(this->produced_cargo); i++) {
+			if (this->produced_cargo[i] == cid) return true;
+		}
+		return false;
+	}
+
+	/* virtual */ uint GetDestinationWeight(CargoID cid, byte weight_mod) const;
+
+	/* virtual */ TileArea GetTileForDestination(CargoID cid)
+	{
+		return this->location;
+	}
+
 	/**
 	 * Check if a given tile belongs to this industry.
 	 * @param tile The tile to check.
@@ -97,7 +135,10 @@ struct Industry : IndustryPool::PoolItem<&_industry_pool> {
 		return Industry::Get(GetIndustryIndex(tile));
 	}
 
-	static Industry *GetRandom();
+	/** Callback function for #Industry::GetRandom. */
+	typedef bool (*EnumIndustryProc)(const Industry *ind, void *data);
+
+	static Industry *GetRandom(EnumIndustryProc enum_proc = NULL, IndustryID skip = INVALID_INDUSTRY, void *data = NULL);
 	static void PostDestructor(size_t index);
 
 	/**
@@ -146,6 +187,8 @@ protected:
 void PlantRandomFarmField(const Industry *i);
 
 void ReleaseDisastersTargetingIndustry(IndustryID);
+
+void UpdateIndustryAcceptance(Industry *ind);
 
 bool IsTileForestIndustry(TileIndex tile);
 

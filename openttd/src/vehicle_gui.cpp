@@ -36,9 +36,11 @@
 #include "company_base.h"
 #include "engine_func.h"
 #include "station_base.h"
+#include "infrastructure_func.h"
 #include "tilehighlight_func.h"
+#include "triphistory.h"
 #include "zoom_func.h"
-
+#include "network/network.h"
 
 Sorting _sorting;
 
@@ -156,6 +158,7 @@ DropDownList *BaseVehicleListWindow::BuildActionDropdownList(bool show_autorepla
 {
 	DropDownList *list = new DropDownList();
 
+	if (!_networking) list->push_back(new DropDownListStringItem(STR_TMPL_TEMPLATE_REPLACEMENT, ADI_TEMPLATE_REPLACE, false));		// MYGUI_NOEND
 	if (show_autoreplace) list->push_back(new DropDownListStringItem(STR_VEHICLE_LIST_REPLACE_VEHICLES, ADI_REPLACE, false));
 	list->push_back(new DropDownListStringItem(STR_VEHICLE_LIST_SEND_FOR_SERVICING, ADI_SERVICE, false));
 	list->push_back(new DropDownListStringItem(this->vehicle_depot_name[this->vli.vtype], ADI_DEPOT, false));
@@ -370,6 +373,7 @@ struct RefitWindow : public Window {
 	VehicleID selected_vehicle;  ///< First vehicle in the current selection.
 	uint8 num_vehicles;          ///< Number of selected vehicles.
 	bool auto_refit;             ///< Select cargo for auto-refitting.
+	bool is_virtual_train;
 
 	/**
 	 * Collects all (cargo, subcargo) refit options of a vehicle chain.
@@ -483,10 +487,11 @@ struct RefitWindow : public Window {
 		return NULL;
 	}
 
-	RefitWindow(const WindowDesc *desc, const Vehicle *v, VehicleOrderID order, bool auto_refit) : Window()
+	RefitWindow(const WindowDesc *desc, const Vehicle *v, VehicleOrderID order, bool auto_refit, bool is_virtual) : Window()
 	{
 		this->sel = -1;
 		this->auto_refit = auto_refit;
+		this->is_virtual_train = is_virtual;
 		this->CreateNestedTree(desc);
 
 		this->vscroll = this->GetScrollbar(WID_VR_SCROLLBAR);
@@ -504,6 +509,34 @@ struct RefitWindow : public Window {
 
 		this->order = order;
 		this->SetWidgetDisabledState(WID_VR_REFIT, this->sel == -1);
+	}
+
+	~RefitWindow()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
+			FocusWindowById(WC_VEHICLE_VIEW, this->window_number);
+		}
+	}
+
+	virtual void OnFocus()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
+		}
+	}
+
+	virtual void OnFocusLost()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
+		}
 	}
 
 	virtual void OnInit()
@@ -840,14 +873,15 @@ struct RefitWindow : public Window {
 			}
 
 			case WID_VR_REFIT: // refit button
+
 				if (this->cargo != NULL) {
 					const Vehicle *v = Vehicle::Get(this->window_number);
 
 					if (this->order == INVALID_VEH_ORDER_ID) {
 						bool delete_window = this->selected_vehicle == v->index && this->num_vehicles == UINT8_MAX;
-						if (DoCommandP(v->tile, this->selected_vehicle, this->cargo->cargo | this->cargo->subtype << 8 | this->num_vehicles << 16, GetCmdRefitVeh(v)) && delete_window) delete this;
+						if (DoCommandP(v->tile, this->selected_vehicle, this->cargo->cargo | this->cargo->subtype << 8 | this->num_vehicles << 16 | this->is_virtual_train << 5, GetCmdRefitVeh(v)) && delete_window) delete this;
 					} else {
-						if (DoCommandP(v->tile, v->index, this->cargo->cargo | this->cargo->subtype << 8 | this->order << 16, CMD_ORDER_REFIT)) delete this;
+						if (DoCommandP(v->tile, v->index, this->cargo->cargo | this->cargo->subtype << 8 | this->order << 16 | this->is_virtual_train << 5, CMD_ORDER_REFIT)) delete this;
 					}
 				}
 				break;
@@ -928,10 +962,10 @@ static const WindowDesc _vehicle_refit_desc(
  * @param parent the parent window of the refit window
  * @param auto_refit Choose cargo for auto-refitting
  */
-void ShowVehicleRefitWindow(const Vehicle *v, VehicleOrderID order, Window *parent, bool auto_refit)
+void ShowVehicleRefitWindow(const Vehicle *v, VehicleOrderID order, Window *parent, bool auto_refit, bool is_virtual_train)
 {
 	DeleteWindowById(WC_VEHICLE_REFIT, v->index);
-	RefitWindow *w = new RefitWindow(&_vehicle_refit_desc, v, order, auto_refit);
+	RefitWindow *w = new RefitWindow(&_vehicle_refit_desc, v, order, auto_refit, is_virtual_train);
 	w->parent = parent;
 }
 
@@ -1676,6 +1710,7 @@ static const NWidgetPart _nested_nontrain_vehicle_details_widgets[] = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_GREY),
 		NWidget(WWT_CAPTION, COLOUR_GREY, WID_VD_CAPTION), SetDataTip(STR_VEHICLE_DETAILS_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_VD_TRIP_HISTORY),SetMinimalSize(44, 0),SetDataTip(STR_TRIP_HISTORY, STR_TRIP_HISTORY_TOOLTIP),
 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_VD_RENAME_VEHICLE), SetMinimalSize(40, 0), SetMinimalTextLines(1, WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM + 2), SetDataTip(STR_VEHICLE_NAME_BUTTON, STR_NULL /* filled in later */),
 		NWidget(WWT_SHADEBOX, COLOUR_GREY),
 		NWidget(WWT_STICKYBOX, COLOUR_GREY),
@@ -1699,6 +1734,7 @@ static const NWidgetPart _nested_train_vehicle_details_widgets[] = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_GREY),
 		NWidget(WWT_CAPTION, COLOUR_GREY, WID_VD_CAPTION), SetDataTip(STR_VEHICLE_DETAILS_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_VD_TRIP_HISTORY),SetMinimalSize(44, 0),SetDataTip(STR_TRIP_HISTORY, STR_TRIP_HISTORY_TOOLTIP),
 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_VD_RENAME_VEHICLE), SetMinimalSize(40, 0), SetMinimalTextLines(1, WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM + 2), SetDataTip(STR_VEHICLE_NAME_BUTTON, STR_NULL /* filled in later */),
 		NWidget(WWT_SHADEBOX, COLOUR_GREY),
 		NWidget(WWT_STICKYBOX, COLOUR_GREY),
@@ -1748,6 +1784,7 @@ static StringID _service_interval_dropdown[] = {
 struct VehicleDetailsWindow : Window {
 	TrainDetailsWindowTabs tab; ///< For train vehicles: which tab is displayed.
 	Scrollbar *vscroll;
+	uint info_height;
 
 	/** Initialize a newly created vehicle details window */
 	VehicleDetailsWindow(const WindowDesc *desc, WindowNumber window_number) : Window()
@@ -1762,6 +1799,17 @@ struct VehicleDetailsWindow : Window {
 
 		this->owner = v->owner;
 		this->tab = TDW_TAB_CARGO;
+                info_height=0;
+	}
+
+	~VehicleDetailsWindow()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
+			FocusWindowById(WC_VEHICLE_VIEW, this->window_number);
+		}
 	}
 
 	/**
@@ -1806,6 +1854,27 @@ struct VehicleDetailsWindow : Window {
 		} else {
 			desired_height = WD_FRAMERECT_TOP + 4 * FONT_HEIGHT_NORMAL + 3 + WD_FRAMERECT_BOTTOM;
 		}
+
+                int num = 0;
+                CargoArray act_cargo;
+                CargoArray max_cargo;
+                CargoDestSummary dests[NUM_CARGO];
+                for (const Vehicle *u = v; u != NULL; u = u->Next()) {
+                        act_cargo[u->cargo_type] += u->cargo.Count();
+                        max_cargo[u->cargo_type] += u->cargo_cap;
+                        AddVehicleCargoDestSummary(u, &dests[u->cargo_type]);
+                }
+
+                /* Set scroll-amount separately from counting, as to not compute num double
+                 * for more carriages of the same type
+                 */
+                for (CargoID i = 0; i < NUM_CARGO; i++) {
+                        if (max_cargo[i] > 0) num++; // only count carriages that the train has
+                        num += (int)dests[i].size();
+                }
+                num += 2; // needs one more because first line is description string
+                desired_height += num * (FONT_HEIGHT_NORMAL + 1);
+
 		return desired_height;
 	}
 
@@ -1841,11 +1910,11 @@ struct VehicleDetailsWindow : Window {
 						break;
 
 					case VEH_SHIP:
-						size->height = WD_FRAMERECT_TOP + 4 * FONT_HEIGHT_NORMAL + 3 + WD_FRAMERECT_BOTTOM;
+						size->height = this->GetRoadVehDetailsHeight(v);
 						break;
 
 					case VEH_AIRCRAFT:
-						size->height = WD_FRAMERECT_TOP + 5 * FONT_HEIGHT_NORMAL + 4 + WD_FRAMERECT_BOTTOM;
+						size->height = this->GetRoadVehDetailsHeight(v);
 						break;
 
 					default:
@@ -1930,7 +1999,13 @@ struct VehicleDetailsWindow : Window {
 				SetDParam(1, v->age / DAYS_IN_LEAP_YEAR);
 				SetDParam(0, (v->age + DAYS_IN_YEAR < v->max_age) ? STR_VEHICLE_INFO_AGE : STR_VEHICLE_INFO_AGE_RED);
 				SetDParam(2, v->max_age / DAYS_IN_LEAP_YEAR);
-				SetDParam(3, v->GetDisplayRunningCost());
+				/* Multiply running costs with day length */
+				if (_settings_game.economy.day_length_balance_type == DBT_ALL_COSTS ||
+					_settings_game.economy.day_length_balance_type == DBT_RUN_COST) {
+					SetDParam(3, v->GetDisplayRunningCost() * _settings_game.economy.day_length_balance_factor);
+				} else {
+					SetDParam(3, v->GetDisplayRunningCost());
+				}
 				DrawString(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, y, STR_VEHICLE_INFO_AGE_RUNNING_COST_YR);
 				y += FONT_HEIGHT_NORMAL;
 
@@ -2020,7 +2095,17 @@ struct VehicleDetailsWindow : Window {
 		if (v->type == VEH_TRAIN) {
 			this->DisableWidget(this->tab + WID_VD_DETAILS_CARGO_CARRIED);
 			this->vscroll->SetCount(GetTrainDetailsWndVScroll(v->index, this->tab));
-		}
+		} else {
+                        /* redraw detail window when it gets larger - thx BoyC */
+                        uint expected = this->GetRoadVehDetailsHeight(v);
+                        NWidgetBase *nwi=GetWidget<NWidgetBase>(WID_VD_MIDDLE_DETAILS);
+                        if (expected>nwi->current_y)
+                        {
+                            info_height=expected;
+                            ReInit();
+                            return;
+                        }
+                }
 
 		/* Disable service-scroller when interval is set to disabled */
 		this->SetWidgetsDisabledState(!IsVehicleServiceIntervalEnabled(v->type, v->owner),
@@ -2039,6 +2124,12 @@ struct VehicleDetailsWindow : Window {
 	virtual void OnClick(Point pt, int widget, int click_count)
 	{
 		switch (widget) {
+			case WID_VD_TRIP_HISTORY: {
+				const Vehicle *v = Vehicle::Get(this->window_number);
+				ShowTripHistoryWindow(v);
+				break;
+			}
+		  
 			case WID_VD_RENAME_VEHICLE: { // rename
 				const Vehicle *v = Vehicle::Get(this->window_number);
 				SetDParam(0, v->index);
@@ -2111,6 +2202,24 @@ struct VehicleDetailsWindow : Window {
 		if (nwi != NULL) {
 			this->vscroll->SetCapacityFromWidget(this, WID_VD_MATRIX);
 			nwi->widget_data = (this->vscroll->GetCapacity() << MAT_ROW_START) + (1 << MAT_COL_START);
+		}
+	}
+
+	virtual void OnFocus()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
+		}
+	}
+
+	virtual void OnFocusLost()
+	{
+		if (this->window_number != INVALID_VEHICLE) {
+			const Vehicle *veh = Vehicle::Get(this->window_number);
+			MarkAllRoutePathsDirty(veh);
+			MarkAllRouteStopoversDirty(veh);
 		}
 	}
 };
@@ -2384,11 +2493,35 @@ public:
 
 	~VehicleViewWindow()
 	{
+               if (this->window_number != INVALID_VEHICLE) {
+                       const Vehicle *veh = Vehicle::Get(this->window_number);
+                       MarkAllRoutePathsDirty(veh);
+                       MarkAllRouteStopoversDirty(veh);
+               }
 		DeleteWindowById(WC_VEHICLE_ORDERS, this->window_number, false);
 		DeleteWindowById(WC_VEHICLE_REFIT, this->window_number, false);
 		DeleteWindowById(WC_VEHICLE_DETAILS, this->window_number, false);
 		DeleteWindowById(WC_VEHICLE_TIMETABLE, this->window_number, false);
+		DeleteWindowById(WC_VEHICLE_TRIP_HISTORY, this->window_number, false);
 	}
+
+       virtual void OnFocus()
+       {
+               if (this->window_number != INVALID_VEHICLE) {
+                       const Vehicle *veh = Vehicle::Get(this->window_number);
+                       MarkAllRoutePathsDirty(veh);
+                       MarkAllRouteStopoversDirty(veh);
+               }
+       }
+
+       virtual void OnFocusLost()
+       {
+               if (this->window_number != INVALID_VEHICLE) {
+                       const Vehicle *veh = Vehicle::Get(this->window_number);
+                       MarkAllRoutePathsDirty(veh);
+                       MarkAllRouteStopoversDirty(veh);
+               }
+       }
 
 	virtual void UpdateWidgetSize(int widget, Dimension *size, const Dimension &padding, Dimension *fill, Dimension *resize)
 	{
@@ -2416,6 +2549,7 @@ public:
 	{
 		const Vehicle *v = Vehicle::Get(this->window_number);
 		bool is_localcompany = v->owner == _local_company;
+		bool can_control = IsVehicleControlAllowed(v, _local_company);
 		bool refitable_and_stopped_in_depot = IsVehicleRefitable(v);
 
 		this->SetWidgetDisabledState(WID_VV_GOTO_DEPOT, !is_localcompany);
@@ -2424,8 +2558,8 @@ public:
 
 		if (v->type == VEH_TRAIN) {
 			this->SetWidgetLoweredState(WID_VV_FORCE_PROCEED, Train::From(v)->force_proceed == TFP_SIGNAL);
-			this->SetWidgetDisabledState(WID_VV_FORCE_PROCEED, !is_localcompany);
-			this->SetWidgetDisabledState(WID_VV_TURN_AROUND, !is_localcompany);
+			this->SetWidgetDisabledState(WID_VV_FORCE_PROCEED, !can_control);
+			this->SetWidgetDisabledState(WID_VV_TURN_AROUND, !can_control);
 		}
 
 		this->DrawWidgets();
@@ -2740,4 +2874,29 @@ int GetVehicleWidth(Vehicle *v, EngineImageType image_type)
 	}
 
 	return vehicle_width;
+}
+
+/**
+ * Sum the cargo carried by a vehicle by final destination.
+ * @param v The vehicle.
+ * @param sum The cargo summary is added to this.
+ */
+void AddVehicleCargoDestSummary(const Vehicle *v, CargoDestSummary *sum)
+{
+	const VehicleCargoList::List *packets = v->cargo.Packets();
+	for (VehicleCargoList::ConstIterator it = packets->begin(); it != packets->end(); ++it) {
+		const CargoPacket *cp = *it;
+
+		/* Search for an existing list entry. */
+		CargoDestSummary::iterator data;
+		for (data = sum->begin(); data != sum->end(); ++data) {
+			if (data->type == cp->DestinationType() && data->dest == cp->DestinationID()) {
+				data->count += cp->Count();
+				break;
+			}
+		}
+
+		/* Not found, insert new entry. */
+		if (data == sum->end() && cp->DestinationID() != INVALID_SOURCE) sum->push_back(CargoDestSummaryData(cp->DestinationID(), cp->DestinationType(), cp->Count()));
+	}
 }

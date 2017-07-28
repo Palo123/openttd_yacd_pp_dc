@@ -1430,6 +1430,9 @@ static SettingEntry _settings_ui_display[] = {
 	SettingEntry("gui.zoom_min"),
 	SettingEntry("gui.zoom_max"),
 	SettingEntry("gui.graph_line_thickness"),
+	SettingEntry("gui.forecast_display"),
+        SettingEntry("gui.show_vehicle_route_stopovers"),
+        SettingEntry("gui.show_vehicle_route_path"),
 };
 /** Display options sub-page */
 static SettingsPage _settings_ui_display_page = {_settings_ui_display, lengthof(_settings_ui_display)};
@@ -1458,44 +1461,68 @@ static SettingEntry _settings_ui_interaction[] = {
 static SettingsPage _settings_ui_interaction_page = {_settings_ui_interaction, lengthof(_settings_ui_interaction)};
 
 static SettingEntry _settings_ui_sound[] = {
-	SettingEntry("sound.click_beep"),
-	SettingEntry("sound.confirm"),
-	SettingEntry("sound.news_ticker"),
-	SettingEntry("sound.news_full"),
-	SettingEntry("sound.new_year"),
-	SettingEntry("sound.disaster"),
-	SettingEntry("sound.vehicle"),
-	SettingEntry("sound.ambient"),
+       SettingEntry("sound.click_beep"),
+       SettingEntry("sound.confirm"),
+       SettingEntry("sound.news_ticker"),
+       SettingEntry("sound.news_full"),
+       SettingEntry("sound.new_year"),
+       SettingEntry("sound.disaster"),
+       SettingEntry("sound.vehicle"),
+       SettingEntry("sound.ambient"),
+       SettingEntry("sound.cashtill"),
 };
 /** Sound effects sub-page */
 static SettingsPage _settings_ui_sound_page = {_settings_ui_sound, lengthof(_settings_ui_sound)};
 
 static SettingEntry _settings_ui_news[] = {
-	SettingEntry("news_display.arrival_player"),
-	SettingEntry("news_display.arrival_other"),
-	SettingEntry("news_display.accident"),
-	SettingEntry("news_display.company_info"),
-	SettingEntry("news_display.open"),
-	SettingEntry("news_display.close"),
-	SettingEntry("news_display.economy"),
-	SettingEntry("news_display.production_player"),
-	SettingEntry("news_display.production_other"),
-	SettingEntry("news_display.production_nobody"),
-	SettingEntry("news_display.advice"),
-	SettingEntry("news_display.new_vehicles"),
-	SettingEntry("news_display.acceptance"),
-	SettingEntry("news_display.subsidies"),
-	SettingEntry("news_display.general"),
-	SettingEntry("gui.coloured_news_year"),
+       SettingEntry("news_display.arrival_player"),
+       SettingEntry("news_display.arrival_other"),
+       SettingEntry("news_display.accident"),
+       SettingEntry("news_display.company_info"),
+       SettingEntry("news_display.open"),
+       SettingEntry("news_display.close"),
+       SettingEntry("news_display.economy"),
+       SettingEntry("news_display.production_player"),
+       SettingEntry("news_display.production_other"),
+       SettingEntry("news_display.production_nobody"),
+       SettingEntry("news_display.advice"),
+       SettingEntry("news_display.new_vehicles"),
+       SettingEntry("news_display.acceptance"),
+       SettingEntry("news_display.subsidies"),
+       SettingEntry("news_display.general"),
+       SettingEntry("gui.coloured_news_year"),
 };
 /** News sub-page */
 static SettingsPage _settings_ui_news_page = {_settings_ui_news, lengthof(_settings_ui_news)};
+
+
+static SettingEntry _settings_ui_departureboards[] = {
+	SettingEntry("gui.max_departures"),
+	SettingEntry("gui.max_departure_time"),
+	SettingEntry("gui.departure_calc_frequency"),
+	SettingEntry("gui.departure_show_vehicle"),
+	SettingEntry("gui.departure_show_group"),
+	SettingEntry("gui.departure_show_company"),
+	SettingEntry("gui.departure_show_vehicle_type"),
+	SettingEntry("gui.departure_show_vehicle_color"),
+	SettingEntry("gui.departure_larger_font"),
+	SettingEntry("gui.departure_destination_type"),
+	SettingEntry("gui.departure_show_both"),
+	SettingEntry("gui.departure_only_passengers"),
+	SettingEntry("gui.departure_smart_terminus"),
+	SettingEntry("gui.departure_conditionals"),
+	SettingEntry("gui.departure_show_all_stops"),
+	SettingEntry("gui.departure_merge_identical"),
+};
+/** Departureboards sub-page */
+static SettingsPage _settings_ui_departureboards_page = {_settings_ui_departureboards, lengthof(_settings_ui_departureboards)};
 
 static SettingEntry _settings_ui[] = {
 	SettingEntry(&_settings_ui_display_page, STR_CONFIG_SETTING_DISPLAY_OPTIONS),
 	SettingEntry(&_settings_ui_interaction_page, STR_CONFIG_SETTING_INTERACTION),
 	SettingEntry(&_settings_ui_sound_page, STR_CONFIG_SETTING_SOUND),
 	SettingEntry(&_settings_ui_news_page, STR_CONFIG_SETTING_NEWS),
+	SettingEntry(&_settings_ui_departureboards_page, STR_CONFIG_SETTING_DEPARTUREBOARDS),
 	SettingEntry("gui.show_finances"),
 	SettingEntry("gui.errmsg_duration"),
 	SettingEntry("gui.hover_delay"),
@@ -1505,6 +1532,11 @@ static SettingEntry _settings_ui[] = {
 	SettingEntry("gui.pause_on_newgame"),
 	SettingEntry("gui.advanced_vehicle_list"),
 	SettingEntry("gui.timetable_in_ticks"),
+	SettingEntry("gui.time_in_minutes"),
+	SettingEntry("gui.timetable_start_text_entry"),
+	SettingEntry("gui.ticks_per_minute"),
+	SettingEntry("gui.date_with_time"),
+	SettingEntry("gui.clock_offset"),
 	SettingEntry("gui.timetable_arrival_departure"),
 	SettingEntry("gui.quick_goto"),
 	SettingEntry("gui.default_rail_type"),
@@ -1525,17 +1557,37 @@ static SettingEntry _settings_construction_signals[] = {
 /** Signals subpage */
 static SettingsPage _settings_construction_signals_page = {_settings_construction_signals, lengthof(_settings_construction_signals)};
 
+static SettingEntry _settings_construction_trafficlights[] = {
+	SettingEntry("construction.traffic_lights"),
+	SettingEntry("construction.towns_build_traffic_lights"),
+	SettingEntry("construction.allow_building_tls_in_towns"),
+	SettingEntry("construction.traffic_lights_green_phase"),
+	SettingEntry("construction.max_tlc_size"),
+	SettingEntry("construction.max_tlc_distance"),
+};
+
+/** Traffic lights subpage */
+static SettingsPage _settings_construction_trafficlights_page = {_settings_construction_trafficlights, lengthof(_settings_construction_trafficlights)};
+
 static SettingEntry _settings_construction[] = {
 	SettingEntry(&_settings_construction_signals_page, STR_CONFIG_SETTING_CONSTRUCTION_SIGNALS),
+	SettingEntry(&_settings_construction_trafficlights_page, STR_CONFIG_SETTING_CONSTRUCTION_TRAFFIC_LIGHTS),
+        SettingEntry("construction.max_heightlevel"),
 	SettingEntry("construction.build_on_slopes"),
 	SettingEntry("construction.autoslope"),
+	SettingEntry("construction.enable_land_buying"),
+	SettingEntry("construction.enable_restrictive_land_buying"),
+	SettingEntry("construction.drag_drop_land_buying_limit"),
 	SettingEntry("construction.extra_dynamite"),
 	SettingEntry("construction.max_bridge_length"),
 	SettingEntry("construction.max_tunnel_length"),
 	SettingEntry("station.never_expire_airports"),
 	SettingEntry("construction.freeform_edges"),
+	SettingEntry("construction.snow_in_temperate"),
 	SettingEntry("construction.extra_tree_placement"),
+        SettingEntry("construction.tree_growth_rate"),
 	SettingEntry("construction.command_pause_level"),
+	SettingEntry("construction.clipboard_capacity"),
 };
 /** Construction sub-page */
 static SettingsPage _settings_construction_page = {_settings_construction, lengthof(_settings_construction)};
@@ -1557,6 +1609,7 @@ static SettingEntry _settings_stations[] = {
 	SettingEntry("station.modified_catchment"),
 	SettingEntry("construction.road_stop_on_town_road"),
 	SettingEntry("construction.road_stop_on_competitor_road"),
+	SettingEntry("station.advanced_control"),
 };
 /** Stations sub-page */
 static SettingsPage _settings_stations_page = {_settings_stations, lengthof(_settings_stations)};
@@ -1575,6 +1628,8 @@ static SettingEntry _settings_economy_towns[] = {
 	SettingEntry("economy.town_growth_rate"),
 	SettingEntry("economy.larger_towns"),
 	SettingEntry("economy.initial_city_size"),
+	SettingEntry("economy.town_construction_cost"),
+	SettingEntry("economy.random_road_construction"),
 };
 /** Towns sub-page */
 static SettingsPage _settings_economy_towns_page = {_settings_economy_towns, lengthof(_settings_economy_towns)};
@@ -1589,17 +1644,38 @@ static SettingEntry _settings_economy_industries[] = {
 static SettingsPage _settings_economy_industries_page = {_settings_economy_industries, lengthof(_settings_economy_industries)};
 
 
+static SettingEntry _settings_economy_day_length[] = {
+	SettingEntry("economy.day_length_factor"),
+	SettingEntry("economy.slow_down_production"),
+	SettingEntry("economy.town_cargo_factor"),
+	SettingEntry("economy.day_length_balance_type"),
+	SettingEntry("economy.day_length_balance_factor"),
+	SettingEntry("economy.include_prop_main_to_run"),
+	SettingEntry("economy.include_loan_int_to_run"),
+	SettingEntry("economy.slow_down_veh_rel_drop_down"),
+	SettingEntry("economy.slow_down_town_growth"),
+//	SettingEntry("economy.show_orig_productions"),
+};
+/** Day length sub-page */
+static SettingsPage _settings_economy_day_length_page = {_settings_economy_day_length, lengthof(_settings_economy_day_length)};
+
 static SettingEntry _settings_economy[] = {
 	SettingEntry(&_settings_economy_towns_page, STR_CONFIG_SETTING_ECONOMY_TOWNS),
 	SettingEntry(&_settings_economy_industries_page, STR_CONFIG_SETTING_ECONOMY_INDUSTRIES),
+	SettingEntry(&_settings_economy_day_length_page, STR_CONFIG_SETTING_ECONOMY_DAY_LENGTH),
 	SettingEntry("economy.inflation"),
 	SettingEntry("difficulty.initial_interest"),
 	SettingEntry("difficulty.max_loan"),
 	SettingEntry("difficulty.subsidy_multiplier"),
 	SettingEntry("difficulty.economy"),
+	SettingEntry("economy.lost_cargo"),
+	SettingEntry("economy.yearly_tax"),
 	SettingEntry("economy.smooth_economy"),
 	SettingEntry("economy.feeder_payment_share"),
 	SettingEntry("economy.infrastructure_maintenance"),
+	SettingEntry("economy.cargodest.mode_pax_mail"),
+	SettingEntry("economy.cargodest.mode_town_cargo"),
+	SettingEntry("economy.cargodest.mode_others"),
 	SettingEntry("difficulty.vehicle_costs"),
 	SettingEntry("difficulty.construction_cost"),
 	SettingEntry("difficulty.disasters"),
@@ -1620,8 +1696,23 @@ static SettingEntry _settings_ai_npc[] = {
 /** Computer players sub-page */
 static SettingsPage _settings_ai_npc_page = {_settings_ai_npc, lengthof(_settings_ai_npc)};
 
+static SettingEntry _settings_sharing[] = {
+	SettingEntry("economy.infrastructure_sharing[0]"),
+	SettingEntry("economy.infrastructure_sharing[1]"),
+	SettingEntry("economy.infrastructure_sharing[2]"),
+	SettingEntry("economy.infrastructure_sharing[3]"),
+	SettingEntry("economy.sharing_fee[0]"),
+	SettingEntry("economy.sharing_fee[1]"),
+	SettingEntry("economy.sharing_fee[2]"),
+	SettingEntry("economy.sharing_fee[3]"),
+	SettingEntry("economy.sharing_payment_in_debt"),
+};
+/** Infrastructure sharing sub-page */
+static SettingsPage _settings_sharing_page = {_settings_sharing, lengthof(_settings_sharing)};
+
 static SettingEntry _settings_ai[] = {
 	SettingEntry(&_settings_ai_npc_page, STR_CONFIG_SETTING_AI_NPC),
+	SettingEntry(&_settings_sharing_page, STR_CONFIG_SETTING_SHARING),
 	SettingEntry("economy.give_money"),
 	SettingEntry("economy.allow_shares"),
 };
@@ -1631,6 +1722,11 @@ static SettingsPage _settings_ai_page = {_settings_ai, lengthof(_settings_ai)};
 static SettingEntry _settings_vehicles_routing[] = {
 	SettingEntry("pf.pathfinder_for_trains"),
 	SettingEntry("pf.forbid_90_deg"),
+	SettingEntry("pf.yellow_pbs"),
+	SettingEntry("pf.yellow_speed"),
+	SettingEntry("pf.double_yellow_speed"),
+	SettingEntry("pf.watch_next_signal"),
+	SettingEntry("pf.slow_down_station"),
 	SettingEntry("pf.pathfinder_for_roadvehs"),
 	SettingEntry("pf.roadveh_queue"),
 	SettingEntry("pf.pathfinder_for_ships"),
@@ -1673,11 +1769,28 @@ static SettingEntry _settings_vehicles_trains[] = {
 /** Trains sub-page */
 static SettingsPage _settings_vehicles_trains_page = {_settings_vehicles_trains, lengthof(_settings_vehicles_trains)};
 
+static SettingEntry _settings_vehicles_speedlimit[] = {
+       SettingEntry("vehicle.limit_vehicle_speed_in_towns"),
+       SettingEntry("vehicle.max_veh_speed_in_towns_two_way"),
+       SettingEntry("vehicle.max_veh_speed_in_towns_one_way"),
+       SettingEntry("vehicle.limit_vehicle_speed_outside_towns"),
+       SettingEntry("vehicle.max_veh_speed_out_towns_two_way"),
+       SettingEntry("vehicle.max_veh_speed_out_towns_one_way"),
+//       SettingEntry("vehicle.limit_vehicle_speed_tunnel_bridge"),
+//       SettingEntry("vehicle.max_veh_speed_tunnel_bridge"),
+       SettingEntry("vehicle.limit_vehicle_speed_in_curves"),
+};
+
+/** Speed limits subpage */
+static SettingsPage _settings_vehicles_speedlimit_page = {_settings_vehicles_speedlimit, lengthof(_settings_vehicles_speedlimit)};
+
 static SettingEntry _settings_vehicles[] = {
 	SettingEntry(&_settings_vehicles_routing_page, STR_CONFIG_SETTING_VEHICLES_ROUTING),
 	SettingEntry(&_settings_vehicles_autorenew_page, STR_CONFIG_SETTING_VEHICLES_AUTORENEW),
 	SettingEntry(&_settings_vehicles_servicing_page, STR_CONFIG_SETTING_VEHICLES_SERVICING),
 	SettingEntry(&_settings_vehicles_trains_page, STR_CONFIG_SETTING_VEHICLES_TRAINS),
+        SettingEntry(&_settings_vehicles_speedlimit_page, STR_CONFIG_SETTING_VEHICLES_SPEEDLIMIT),
+	SettingEntry("gui.specific_group_name"),
 	SettingEntry("gui.new_nonstop"),
 	SettingEntry("gui.order_review_system"),
 	SettingEntry("gui.vehicle_income_warn"),
@@ -1689,11 +1802,15 @@ static SettingEntry _settings_vehicles[] = {
 	SettingEntry("vehicle.max_ships"),
 	SettingEntry("vehicle.plane_speed"),
 	SettingEntry("vehicle.plane_crashes"),
+	SettingEntry("order.automatic_timetable_separation"),
 	SettingEntry("vehicle.dynamic_engines"),
 	SettingEntry("vehicle.roadveh_acceleration_model"),
 	SettingEntry("vehicle.roadveh_slope_steepness"),
 	SettingEntry("vehicle.smoke_amount"),
+	SettingEntry("vehicle.repair_cost"),
 };
+
+
 /** Vehicles sub-page */
 static SettingsPage _settings_vehicles_page = {_settings_vehicles, lengthof(_settings_vehicles)};
 

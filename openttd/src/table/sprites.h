@@ -56,7 +56,9 @@ static const SpriteID SPR_LARGE_SMALL_WINDOW = 682;
 
 /** Extra graphic spritenumbers */
 static const SpriteID SPR_OPENTTD_BASE   = 4896;
-static const uint16 OPENTTD_SPRITE_COUNT = 168;
+//static const uint16 OPENTTD_SPRITE_COUNT = 168;
+//static const uint16 OPENTTD_SPRITE_COUNT = 187;
+static const uint16 OPENTTD_SPRITE_COUNT = 193;
 
 /* Halftile-selection sprites */
 static const SpriteID SPR_HALFTILE_SELECTION_FLAT = SPR_OPENTTD_BASE;
@@ -157,12 +159,18 @@ static const SpriteID SPR_IMG_SWITCH_TOOLBAR = SPR_OPENTTD_BASE + 144;
 static const SpriteID SPR_IMG_DELETE_LEFT            = SPR_OPENTTD_BASE + 166;
 static const SpriteID SPR_IMG_DELETE_RIGHT           = SPR_OPENTTD_BASE + 167;
 
-static const SpriteID SPR_SIGNALS_BASE  = SPR_OPENTTD_BASE + OPENTTD_SPRITE_COUNT;
+static const SpriteID SPR_CLIPBOARD_BASE  = SPR_OPENTTD_BASE + OPENTTD_SPRITE_COUNT;
+static const SpriteID CLIPBOARD_SPRITE_COUNT = 25;
+
+static const SpriteID SPR_SIGNALS_BASE  = SPR_CLIPBOARD_BASE + CLIPBOARD_SPRITE_COUNT;
 static const uint16 PRESIGNAL_SPRITE_COUNT                   =  48;
 static const uint16 PRESIGNAL_AND_SEMAPHORE_SPRITE_COUNT     = 112;
 static const uint16 PRESIGNAL_SEMAPHORE_AND_PBS_SPRITE_COUNT = 240;
 
-static const SpriteID SPR_CANALS_BASE   = SPR_SIGNALS_BASE + PRESIGNAL_SEMAPHORE_AND_PBS_SPRITE_COUNT;
+static const SpriteID SPR_PBS_YELLOW_SIGNALS         = SPR_SIGNALS_BASE + PRESIGNAL_SEMAPHORE_AND_PBS_SPRITE_COUNT;
+static const uint16 SPR_PBS_YELLOW_SIGNALS_COUNT     =  192;
+
+static const SpriteID SPR_CANALS_BASE   = SPR_PBS_YELLOW_SIGNALS + SPR_PBS_YELLOW_SIGNALS_COUNT;
 static const uint16 CANALS_SPRITE_COUNT = 65;
 
 /** Sprites for the Aqueduct. */
@@ -200,7 +208,10 @@ static const uint16 AUTORAIL_SPRITE_COUNT = 55;
 static const SpriteID SPR_ELRAIL_BASE   = SPR_AUTORAIL_BASE + AUTORAIL_SPRITE_COUNT;
 static const uint16 ELRAIL_SPRITE_COUNT = 48;
 
-static const SpriteID SPR_2CCMAP_BASE   = SPR_ELRAIL_BASE + ELRAIL_SPRITE_COUNT;
+static const SpriteID SPR_TRAFFICLIGHTS_BASE   = SPR_ELRAIL_BASE + ELRAIL_SPRITE_COUNT;
+static const uint16 TRAFFICLIGHTS_SPRITE_COUNT = 22;
+
+static const SpriteID SPR_2CCMAP_BASE   = SPR_TRAFFICLIGHTS_BASE + TRAFFICLIGHTS_SPRITE_COUNT;
 static const uint16 TWOCCMAP_SPRITE_COUNT = 256;
 
 /** shore tiles - action 05-0D */
@@ -285,6 +296,9 @@ static const uint16 RAILTYPE_TUNNEL_BASE_COUNT = 16;
 /* Not really a sprite, but an empty bounding box. Used to construct bounding boxes that help sorting the sprites, but do not have a sprite associated. */
 static const SpriteID SPR_EMPTY_BOUNDING_BOX = SPR_RAILTYPE_TUNNEL_BASE + RAILTYPE_TUNNEL_BASE_COUNT;
 static const uint16 EMPTY_BOUNDING_BOX_SPRITE_COUNT = 1;
+
+//static const uint16 SPR_FLAT_BLACKTILES_COUNT = 19;
+//static const SpriteID SPR_FLAT_BLACKTILES = SPR_EMPTY_BOUNDING_BOX + EMPTY_BOUNDING_BOX_SPRITE_COUNT;
 
 /* From where can we start putting NewGRFs? */
 static const SpriteID SPR_NEWGRFS_BASE = SPR_EMPTY_BOUNDING_BOX + EMPTY_BOUNDING_BOX_SPRITE_COUNT;
@@ -563,6 +577,8 @@ static const SpriteID SPR_FLAT_1_QUART_SNOW_DESERT_TILE = 4493;
 static const SpriteID SPR_FLAT_2_QUART_SNOW_DESERT_TILE = 4512;
 static const SpriteID SPR_FLAT_3_QUART_SNOW_DESERT_TILE = 4531;
 static const SpriteID SPR_FLAT_SNOW_DESERT_TILE         = 4550;
+/* Blacktiles all slopes. */
+static const SpriteID SPR_FLAT_BLACKTILES               = SPR_OPENTTD_BASE + 174;
 
 /* Hedge, Farmland-fence sprites */
 static const SpriteID SPR_HEDGE_BUSHES            = 4090;
@@ -1087,6 +1103,34 @@ static const SpriteID SPR_IMG_QUERY           = 723;
 static const SpriteID SPR_IMG_SIGN            = 4082;
 static const SpriteID SPR_IMG_BUY_LAND        = 4791;
 
+/* Traffic lights */
+static const SpriteID SPR_IMG_TRAFFIC_LIGHT     = SPR_TRAFFICLIGHTS_BASE;
+static const SpriteID SPR_CURSOR_TRAFFIC_LIGHT  = SPR_TRAFFICLIGHTS_BASE + 1;
+
+static const SpriteID SPR_TL_SW_RED             = SPR_TRAFFICLIGHTS_BASE + 2;
+static const SpriteID SPR_TL_SW_RED_YELLOW      = SPR_TRAFFICLIGHTS_BASE + 3;
+static const SpriteID SPR_TL_SW_GREEN           = SPR_TRAFFICLIGHTS_BASE + 4;
+static const SpriteID SPR_TL_SW_YELLOW          = SPR_TRAFFICLIGHTS_BASE + 5;
+static const SpriteID SPR_TL_SW_NONE            = SPR_TRAFFICLIGHTS_BASE + 6;
+
+static const SpriteID SPR_TL_SE_RED             = SPR_TRAFFICLIGHTS_BASE + 7;
+static const SpriteID SPR_TL_SE_RED_YELLOW      = SPR_TRAFFICLIGHTS_BASE + 8;
+static const SpriteID SPR_TL_SE_GREEN           = SPR_TRAFFICLIGHTS_BASE + 9;
+static const SpriteID SPR_TL_SE_YELLOW          = SPR_TRAFFICLIGHTS_BASE + 10;
+static const SpriteID SPR_TL_SE_NONE            = SPR_TRAFFICLIGHTS_BASE + 11;
+
+static const SpriteID SPR_TL_NW_RED             = SPR_TRAFFICLIGHTS_BASE + 12;
+static const SpriteID SPR_TL_NW_RED_YELLOW      = SPR_TRAFFICLIGHTS_BASE + 13;
+static const SpriteID SPR_TL_NW_GREEN           = SPR_TRAFFICLIGHTS_BASE + 14;
+static const SpriteID SPR_TL_NW_YELLOW          = SPR_TRAFFICLIGHTS_BASE + 15;
+static const SpriteID SPR_TL_NW_NONE            = SPR_TRAFFICLIGHTS_BASE + 16;
+
+static const SpriteID SPR_TL_NE_RED             = SPR_TRAFFICLIGHTS_BASE + 17;
+static const SpriteID SPR_TL_NE_RED_YELLOW      = SPR_TRAFFICLIGHTS_BASE + 18;
+static const SpriteID SPR_TL_NE_GREEN           = SPR_TRAFFICLIGHTS_BASE + 19;
+static const SpriteID SPR_TL_NE_YELLOW          = SPR_TRAFFICLIGHTS_BASE + 20;
+static const SpriteID SPR_TL_NE_NONE            = SPR_TRAFFICLIGHTS_BASE + 21;
+
 /* OpenTTD in gamescreen */
 static const SpriteID SPR_OTTD_O                = 4842;
 static const SpriteID SPR_OTTD_P                = 4841;
@@ -1306,6 +1350,8 @@ static const SpriteID SPR_IMG_SIGNAL_SEMAPHORE_PBS     = SPR_SIGNALS_BASE + 188;
 static const SpriteID SPR_IMG_SIGNAL_SEMAPHORE_PBS_OWAY= SPR_SIGNALS_BASE + 204;
 static const SpriteID SPR_IMG_SIGNAL_CONVERT           = SPR_OPENTTD_BASE + 135;
 
+static const SpriteID SPR_IMG_SIGNAL_PBS_WITH_YELLOW = SPR_PBS_YELLOW_SIGNALS;
+
 static const SpriteID SPR_IMG_TUNNEL_RAIL   = 2430;
 static const SpriteID SPR_IMG_TUNNEL_MONO   = 2431;
 static const SpriteID SPR_IMG_TUNNEL_MAGLEV = 2432;
@@ -1314,6 +1360,30 @@ static const SpriteID SPR_IMG_CONVERT_RAIL   = SPR_OPENTTD_BASE + 55;
 static const SpriteID SPR_IMG_CONVERT_ELRAIL = SPR_OPENTTD_BASE + 59;
 static const SpriteID SPR_IMG_CONVERT_MONO   = SPR_OPENTTD_BASE + 65;
 static const SpriteID SPR_IMG_CONVERT_MAGLEV = SPR_OPENTTD_BASE + 71;
+
+/* clipboard_gui.cpp */
+static const SpriteID SPR_IMG_CLIPBOARD                    = SPR_CLIPBOARD_BASE + 0;
+static const SpriteID SPR_IMG_CLIPBOARD_COPY               = SPR_CLIPBOARD_BASE + 1;
+static const SpriteID SPR_IMG_CLIPBOARD_PASTE              = SPR_CLIPBOARD_BASE + 2;
+static const SpriteID SPR_IMG_CLIPBOARD_SELECT_COPY_AREA   = SPR_CLIPBOARD_BASE + 3;
+static const SpriteID SPR_IMG_CLIPBOARD_INSTANT_COPY_PASTE = SPR_CLIPBOARD_BASE + 4;
+static const SpriteID SPR_IMG_CLIPBOARD_NO_RAIL_CONVERTION = SPR_CLIPBOARD_BASE + 5;
+static const SpriteID SPR_IMG_CLIPBOARD_MIRROR_SIGNALS_OFF = SPR_CLIPBOARD_BASE + 6;
+static const SpriteID SPR_IMG_CLIPBOARD_MIRROR_SIGNALS_ON  = SPR_CLIPBOARD_BASE + 7;
+static const SpriteID SPR_IMG_CLIPBOARD_UPGRADE_BRIDGES    = SPR_CLIPBOARD_BASE + 8;
+static const SpriteID SPR_IMG_CLIPBOARD_ROTATE_LEFT        = SPR_CLIPBOARD_BASE + 9;
+static const SpriteID SPR_IMG_CLIPBOARD_ROTATE_RIGHT       = SPR_CLIPBOARD_BASE + 10;
+static const SpriteID SPR_IMG_CLIPBOARD_REFLECT_NE_SW      = SPR_CLIPBOARD_BASE + 11;
+static const SpriteID SPR_IMG_CLIPBOARD_REFLECT_NW_SE      = SPR_CLIPBOARD_BASE + 12;
+static const SpriteID SPR_IMG_TRANFORMATION_IDENTITY       = SPR_CLIPBOARD_BASE + 13;
+static const SpriteID SPR_IMG_TRANFORMATION_ROT_90_R       = SPR_CLIPBOARD_BASE + 14;
+static const SpriteID SPR_IMG_TRANFORMATION_ROT_180        = SPR_CLIPBOARD_BASE + 15;
+static const SpriteID SPR_IMG_TRANFORMATION_ROT_90_L       = SPR_CLIPBOARD_BASE + 16;
+static const SpriteID SPR_IMG_TRANFORMATION_REF_NE_SW      = SPR_CLIPBOARD_BASE + 17;
+static const SpriteID SPR_IMG_TRANFORMATION_REF_W_E        = SPR_CLIPBOARD_BASE + 18;
+static const SpriteID SPR_IMG_TRANFORMATION_REF_NW_SE      = SPR_CLIPBOARD_BASE + 19;
+static const SpriteID SPR_IMG_TRANFORMATION_REF_N_S        = SPR_CLIPBOARD_BASE + 20;
+static const SpriteID SPR_IMG_CLIPBOARD_HEIGHT_PANEL       = SPR_CLIPBOARD_BASE + 21;
 
 /* intro_gui.cpp, genworld_gui.cpp */
 static const SpriteID SPR_SELECT_TEMPERATE           = 4882;
@@ -1422,6 +1492,11 @@ static const CursorID SPR_CURSOR_CLONE_TRAIN    = SPR_OPENTTD_BASE + 110;
 static const CursorID SPR_CURSOR_CLONE_ROADVEH  = SPR_OPENTTD_BASE + 111;
 static const CursorID SPR_CURSOR_CLONE_SHIP     = SPR_OPENTTD_BASE + 112;
 static const CursorID SPR_CURSOR_CLONE_AIRPLANE = SPR_OPENTTD_BASE + 113;
+
+/* Clipboard cursors */
+static const CursorID SPR_CURSOR_COPY           = SPR_CLIPBOARD_BASE + 22;
+static const CursorID SPR_CURSOR_PASTE          = SPR_CLIPBOARD_BASE + 23;
+static const CursorID SPR_CURSOR_ADJUST_HEIGHT  = SPR_CLIPBOARD_BASE + 24;
 
 /** Animation macro in table/animcursors.h (_animcursors[]) */
 

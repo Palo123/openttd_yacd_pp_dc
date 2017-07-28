@@ -37,7 +37,8 @@ void DrawRoadVehDetails(const Vehicle *v, int left, int right, int y)
 	SetDParam(2, v->value);
 	DrawString(left, right, y + y_offset, STR_VEHICLE_INFO_BUILT_VALUE);
 
-	if (v->HasArticulatedPart()) {
+                CargoArray act_cargo;
+                CargoDestSummary dests[NUM_CARGO];
 		CargoArray max_cargo;
 		StringID subtype_text[NUM_CARGO];
 		char capacity[512];
@@ -87,33 +88,41 @@ void DrawRoadVehDetails(const Vehicle *v, int left, int right, int y)
 				SetDParam(2, u->cargo.Source());
 				str = STR_VEHICLE_DETAILS_CARGO_FROM;
 				feeder_share += u->cargo.FeederShare();
+                                act_cargo[u->cargo_type] += u->cargo.Count();
+                                AddVehicleCargoDestSummary(u, &dests[u->cargo_type]);
 			}
 			DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, str);
 
 			y_offset += FONT_HEIGHT_NORMAL + 1;
 		}
 
-		y_offset -= FONT_HEIGHT_NORMAL + 1;
-	} else {
-		SetDParam(0, v->cargo_type);
-		SetDParam(1, v->cargo_cap);
-		SetDParam(4, GetCargoSubtypeText(v));
-		DrawString(left, right, y + FONT_HEIGHT_NORMAL + y_offset, STR_VEHICLE_INFO_CAPACITY);
+        /* Draw Transfer credits text */
+        SetDParam(0, feeder_share);
+        DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 3 + y_offset, STR_VEHICLE_INFO_FEEDER_CARGO_VALUE);
+        y_offset += 2 * FONT_HEIGHT_NORMAL + 6;
 
-		str = STR_VEHICLE_DETAILS_CARGO_EMPTY;
-		if (!v->cargo.Empty()) {
-			SetDParam(0, v->cargo_type);
-			SetDParam(1, v->cargo.Count());
-			SetDParam(2, v->cargo.Source());
-			str = STR_VEHICLE_DETAILS_CARGO_FROM;
-			feeder_share += v->cargo.FeederShare();
-		}
-		DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, str);
-	}
 
-	/* Draw Transfer credits text */
-	SetDParam(0, feeder_share);
-	DrawString(left, right, y + 3 * FONT_HEIGHT_NORMAL + 3 + y_offset, STR_VEHICLE_INFO_FEEDER_CARGO_VALUE);
+                DrawString(left, right, y + FONT_HEIGHT_NORMAL + y_offset, STR_STATION_VIEW_WAITING_TO_BUTTON);
+
+                for (CargoID i = 0; i < NUM_CARGO; i++) {
+                        if (max_cargo[i] > 0) {
+                                SetDParam(0, i);            // {CARGO} #1
+                                SetDParam(1, act_cargo[i]); // {CARGO} #2
+                                SetDParam(2, i);            // {SHORTCARGO} #1
+                                SetDParam(3, max_cargo[i]); // {SHORTCARGO} #2
+                                SetDParam(4, _settings_game.vehicle.freight_trains);
+                                DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY);
+                                y_offset += FONT_HEIGHT_NORMAL + 1;
+                        }
+                        for (CargoDestSummary::const_iterator row = dests[i].begin(); row != dests[i].end(); ++row) {
+                                        SetDParam(0, i);          // {SHORTCARGO} #1
+                                        SetDParam(1, row->count); // {SHORTCARGO} #2
+                                        SetDParam(2, row->type == ST_INDUSTRY ? STR_INDUSTRY_NAME : (row->type == ST_TOWN ? STR_TOWN_NAME : STR_COMPANY_NAME)); // {STRING1}
+                                        SetDParam(3, row->dest);  // Parameter of {STRING1}
+                                        DrawString(left + 2 * WD_PAR_VSEP_WIDE, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, STR_VEHICLE_DETAILS_CARGO_TO);
+                                        y_offset += FONT_HEIGHT_NORMAL + 1;
+                        }
+                }
 }
 
 /**

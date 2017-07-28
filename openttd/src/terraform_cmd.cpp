@@ -10,7 +10,9 @@
 /** @file terraform_cmd.cpp Commands related to terraforming. */
 
 #include "stdafx.h"
+#include "core/geometry_func.hpp"
 #include "command_func.h"
+#include "copypaste_cmd.h"
 #include "tunnel_map.h"
 #include "bridge_map.h"
 #include "viewport_func.h"
@@ -18,41 +20,18 @@
 #include "object_base.h"
 #include "company_base.h"
 #include "company_func.h"
+#include "strings_func.h"
+#include "tunnelbridge.h"
 
 #include "table/strings.h"
 
-/*
- * In one terraforming command all four corners of a initial tile can be raised/lowered (though this is not available to the player).
- * The maximal amount of height modifications is achieved when raising a complete flat land from sea level to MAX_TILE_HEIGHT or vice versa.
- * This affects all corners with a manhatten distance smaller than MAX_TILE_HEIGHT to one of the initial 4 corners.
- * Their maximal amount is computed to 4 * \sum_{i=1}^{h_max} i  =  2 * h_max * (h_max + 1).
- */
-static const int TERRAFORMER_MODHEIGHT_SIZE = 2 * MAX_TILE_HEIGHT * (MAX_TILE_HEIGHT + 1);
-
-/*
- * The maximal amount of affected tiles (i.e. the tiles that incident with one of the corners above, is computed similar to
- * 1 + 4 * \sum_{i=1}^{h_max} (i+1)  =  1 + 2 * h_max + (h_max + 3).
- */
-static const int TERRAFORMER_TILE_TABLE_SIZE = 1 + 2 * MAX_TILE_HEIGHT * (MAX_TILE_HEIGHT + 3);
-
-struct TerraformerHeightMod {
-	TileIndex tile;   ///< Referenced tile.
-	byte height;      ///< New TileHeight (height of north corner) of the tile.
-};
+#include <map>
+#include <set>
 
 struct TerraformerState {
-	int modheight_count;  ///< amount of entries in "modheight".
-	int tile_table_count; ///< amount of entries in "tile_table".
+       std::set<TileIndex> dirty_tiles;
 
-	/**
-	 * Dirty tiles, i.e.\ at least one corner changed.
-	 *
-	 * This array contains the tiles which are or will be marked as dirty.
-	 *
-	 * @ingroup dirty
-	 */
-	TileIndex tile_table[TERRAFORMER_TILE_TABLE_SIZE];
-	TerraformerHeightMod modheight[TERRAFORMER_MODHEIGHT_SIZE];  ///< Height modifications.
+       std::map<TileIndex, int> tile_to_new_height;
 };
 
 TileIndex _terraform_err_tile; ///< first tile we couldn't terraform
@@ -64,16 +43,13 @@ TileIndex _terraform_err_tile; ///< first tile we couldn't terraform
  * @param tile Tile.
  * @return TileHeight.
  */
-static int TerraformGetHeightOfTile(const TerraformerState *ts, TileIndex tile)
+static int TerraformGetHeightOfTile(TerraformerState *ts, TileIndex tile)
 {
-	const TerraformerHeightMod *mod = ts->modheight;
-
-	for (int count = ts->modheight_count; count != 0; count--, mod++) {
-		if (mod->tile == tile) return mod->height;
+	if (ts->tile_to_new_height.find(tile) != ts->tile_to_new_height.end()) {
+		return ts->tile_to_new_height[tile];
+	} else {
+		return TileHeight(tile);
 	}
-
-	/* TileHeight unchanged so far, read value from map. */
-	return TileHeight(tile);
 }
 
 /**
@@ -85,26 +61,7 @@ static int TerraformGetHeightOfTile(const TerraformerState *ts, TileIndex tile)
  */
 static void TerraformSetHeightOfTile(TerraformerState *ts, TileIndex tile, int height)
 {
-	/* Find tile in the "modheight" table.
-	 * Note: In a normal user-terraform command the tile will not be found in the "modheight" table.
-	 *       But during house- or industry-construction multiple corners can be terraformed at once. */
-	TerraformerHeightMod *mod = ts->modheight;
-	int count = ts->modheight_count;
-
-	while ((count > 0) && (mod->tile != tile)) {
-		mod++;
-		count--;
-	}
-
-	/* New entry? */
-	if (count == 0) {
-		assert(ts->modheight_count < TERRAFORMER_MODHEIGHT_SIZE);
-		ts->modheight_count++;
-	}
-
-	/* Finally store the new value */
-	mod->tile = tile;
-	mod->height = (byte)height;
+	ts->tile_to_new_height[tile] = height;
 }
 
 /**
@@ -116,15 +73,7 @@ static void TerraformSetHeightOfTile(TerraformerState *ts, TileIndex tile, int h
  */
 static void TerraformAddDirtyTile(TerraformerState *ts, TileIndex tile)
 {
-	int count = ts->tile_table_count;
-
-	for (TileIndex *t = ts->tile_table; count != 0; count--, t++) {
-		if (*t == tile) return;
-	}
-
-	assert(ts->tile_table_count < TERRAFORMER_TILE_TABLE_SIZE);
-
-	ts->tile_table[ts->tile_table_count++] = tile;
+	ts->dirty_tiles.insert(tile);
 }
 
 /**
@@ -143,6 +92,92 @@ static void TerraformAddDirtyTileAround(TerraformerState *ts, TileIndex tile)
 	TerraformAddDirtyTile(ts, tile);
 }
 
+static void MarkTilesDirty(TerraformerState &ts)
+{
+	for (std::set<TileIndex>::const_iterator it = ts.dirty_tiles.begin(); it != ts.dirty_tiles.end(); it++) {
+		TileIndex ti = *it;
+		MarkTileDirtyByTile(ti);
+
+		int height = TerraformGetHeightOfTile(&ts, ti);
+
+		/* Now, if we alter the height of the map edge, we need to take care
+		 * about repainting the affected areas outside map as well.
+		 * Remember:
+		 * Outside map, we assume that our landscape descends to
+		 * height zero as fast as possible.
+		 * Those simulated tiles (they don't exist as datastructure,
+		 * only as concept in code) need to be repainted properly,
+		 * otherwise we will get ugly glitches.
+		 *
+		 * Furthermore, note that we have to take care about the possibility,
+		 * that landscape was higher before the change,
+		 * so also tiles a bit outside need to be repainted. */
+		int x = TileX(ti);
+		int y = TileY(ti);
+		if (x == 0) {
+			if (y == 0) {
+				/* Height of the northern corner is altered. */
+				for (int cx = 0; cx >= -height - 1; cx--) {
+					for (int cy = 0; cy >= -height - 1; cy--) {
+						/* This means, tiles in the sector north of that
+						 * corner need to be repainted. */
+						if (cx + cy >= -height - 2) {
+							/* But only tiles that actually might have changed. */
+							MarkTileDirtyByTileOutsideMap(cx, cy);
+						}
+					}
+				}
+			} else if (y < (int)MapMaxY()) {
+				for (int cx = 0; cx >= -height - 1; cx--) {
+					MarkTileDirtyByTileOutsideMap(cx, y);
+				}
+			} else {
+				for (int cx = 0; cx >= -height - 1; cx--) {
+					for (int cy = (int)MapMaxY(); cy <= (int)MapMaxY() + height + 1; cy++) {
+						if (cx + ((int)MapMaxY() - cy) >= -height - 2) {
+							MarkTileDirtyByTileOutsideMap(cx, cy);
+						}
+					}
+				}
+			}
+		} else if (x < (int)MapMaxX()) {
+			if (y == 0) {
+				for (int cy = 0; cy >= -height - 1; cy--) {
+					MarkTileDirtyByTileOutsideMap(x, cy);
+				}
+			} else if (y < (int)MapMaxY()) {
+				/* Nothing to be done here, we are inside the map. */
+			} else {
+				for (int cy = (int)MapMaxY(); cy <= (int)MapMaxY() + height + 1; cy++) {
+					MarkTileDirtyByTileOutsideMap(x, cy);
+				}
+			}
+		} else {
+			if (y == 0) {
+				for (int cx = (int)MapMaxX(); cx <= (int)MapMaxX() + height + 1; cx++) {
+					for (int cy = 0; cy >= -height - 1; cy--) {
+						if (((int)MapMaxX() - cx) + cy >= -height - 2) {
+							MarkTileDirtyByTileOutsideMap(cx, cy);
+						}
+					}
+				}
+			} else if (y < (int)MapMaxY()) {
+				for (int cx = (int)MapMaxX(); cx <= (int)MapMaxX() + height + 1; cx++) {
+					MarkTileDirtyByTileOutsideMap(cx, y);
+				}
+			} else {
+				for (int cx = (int)MapMaxX(); cx <= (int)MapMaxX() + height + 1; cx++) {
+					for (int cy = (int)MapMaxY(); cy <= (int)MapMaxY() + height + 1; cy++) {
+						if (((int)MapMaxX() - cx) + ((int)MapMaxY() - cy) >= -height - 2) {
+							MarkTileDirtyByTileOutsideMap(cx, cy);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 /**
  * Terraform the north corner of a tile to a specific height.
  *
@@ -157,7 +192,7 @@ static CommandCost TerraformTileHeight(TerraformerState *ts, TileIndex tile, int
 
 	/* Check range of destination height */
 	if (height < 0) return_cmd_error(STR_ERROR_ALREADY_AT_SEA_LEVEL);
-	if (height > (int)MAX_TILE_HEIGHT) return_cmd_error(STR_ERROR_TOO_HIGH);
+	if (height > _settings_game.construction.max_heightlevel) return_cmd_error(STR_ERROR_TOO_HIGH);
 
 	/*
 	 * Check if the terraforming has any effect.
@@ -245,8 +280,6 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 	int direction = (p2 != 0 ? 1 : -1);
 	TerraformerState ts;
 
-	ts.modheight_count = ts.tile_table_count = 0;
-
 	/* Compute the costs and the terraforming result in a model of the landscape */
 	if ((p1 & SLOPE_W) != 0 && tile + TileDiffXY(1, 0) < MapSize()) {
 		TileIndex t = tile + TileDiffXY(1, 0);
@@ -280,10 +313,8 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 	 * Pass == 0: Collect tileareas which are caused to be auto-cleared.
 	 * Pass == 1: Collect the actual cost. */
 	for (int pass = 0; pass < 2; pass++) {
-		TileIndex *ti = ts.tile_table;
-
-		for (int count = ts.tile_table_count; count != 0; count--, ti++) {
-			TileIndex tile = *ti;
+		for (std::set<TileIndex>::const_iterator it = ts.dirty_tiles.begin(); it != ts.dirty_tiles.end(); it++) {
+			TileIndex tile = *it;
 
 			assert(tile < MapSize());
 			/* MP_VOID tiles can be terraformed but as tunnels and bridges
@@ -309,10 +340,21 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 
 			if (pass == 0) {
 				/* Check if bridge would take damage */
-				if (direction == 1 && MayHaveBridgeAbove(tile) && IsBridgeAbove(tile) &&
-						GetBridgeHeight(GetSouthernBridgeEnd(tile)) <= z_max) {
-					_terraform_err_tile = tile; // highlight the tile under the bridge
-					return_cmd_error(STR_ERROR_MUST_DEMOLISH_BRIDGE_FIRST);
+				if (MayHaveBridgeAbove(tile) && IsBridgeAbove(tile)) {
+					int bridge_height = GetBridgeHeight(GetSouthernBridgeEnd(tile));
+
+					/* Check if bridge would take damage. */
+					if (direction == 1 && bridge_height <= z_max) {
+						_terraform_err_tile = tile; ///< highlight the tile under the bridge
+						return_cmd_error(STR_ERROR_MUST_DEMOLISH_BRIDGE_FIRST);
+					}
+
+					/* Is the bridge above not too high afterwards?
+					 * @see tunnelbridge.h for a detailed discussion. */
+					if (direction == -1 && bridge_height > (z_min + MAX_BRIDGE_HEIGHT)) {
+						_terraform_err_tile = tile;
+						return_cmd_error(STR_ERROR_BRIDGE_TOO_HIGH_AFTER_LOWER_LAND);
+					}
 				}
 				/* Check if tunnel would take damage */
 				if (direction == -1 && IsTunnelInWay(tile, z_min)) {
@@ -349,38 +391,148 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 	}
 
 	Company *c = Company::GetIfValid(_current_company);
-	if (c != NULL && (int)GB(c->terraform_limit, 16, 16) < ts.modheight_count) {
+	if (c != NULL && (int)GB(c->terraform_limit, 16, 16) < ts.tile_to_new_height.size()) {
 		return_cmd_error(STR_ERROR_TERRAFORM_LIMIT_REACHED);
 	}
+
 
 	if (flags & DC_EXEC) {
 		/* change the height */
 		{
-			int count;
-			TerraformerHeightMod *mod;
+			for (std::map<TileIndex, int>::const_iterator it = ts.tile_to_new_height.begin();
+					it != ts.tile_to_new_height.end(); it++) {
+				TileIndex tile = it->first;
+				int height = it->second;
 
-			mod = ts.modheight;
-			for (count = ts.modheight_count; count != 0; count--, mod++) {
-				TileIndex til = mod->tile;
-
-				SetTileHeight(til, mod->height);
+				SetTileHeight(tile, (uint)height);
 			}
 		}
 
 		/* finally mark the dirty tiles dirty */
 		{
-			int count;
-			TileIndex *ti = ts.tile_table;
-			for (count = ts.tile_table_count; count != 0; count--, ti++) {
-				MarkTileDirtyByTile(*ti);
-			}
+			MarkTilesDirty(ts);
 		}
 
-		if (c != NULL) c->terraform_limit -= ts.modheight_count << 16;
+		if (c != NULL) c->terraform_limit -= ts.tile_to_new_height.size() << 16;
 	}
 	return total_cost;
 }
 
+/** Tile iterator for terraforming purposes. */
+class TerraformingIterator : public TileIterator {
+public:
+	TerraformingIterator(TileIndex tile) : TileIterator(tile) { }
+
+	/*
+	 * Get the target height of currently iterated tile.
+	 * @return target height for the tile
+	 */
+	virtual int GetTileTargetHeight() const = 0;
+
+	virtual TerraformingIterator *Clone() const { NOT_REACHED(); /* not implemented */ };
+};
+
+/** Terraforming iterator for leveling an area. */
+class LandLevelingIterator : public TerraformingIterator {
+public:
+	int target_height;
+
+	LandLevelingIterator(TileIndex tile, int target_height)
+		: TerraformingIterator(tile), target_height(target_height)
+	{
+	}
+
+	virtual int GetTileTargetHeight() const
+	{
+		return this->target_height;
+	}
+};
+
+/** Orthogonal variant of a #LandLevelingIterator. */
+class OrthogonalLandLevelingIterator : public LandLevelingIterator, protected OrthogonalTileIteratorController {
+public:
+	OrthogonalLandLevelingIterator(const TileArea &ta, int target_height) : LandLevelingIterator(ta.tile, target_height)
+	{
+		this->Init(this->MyIndex(), ta.w, ta.h);
+	}
+
+	TileIterator &operator ++ ()
+	{
+		this->Advance(this->MyIndex(), this->MyMap());
+		return *this;
+	}
+};
+
+/** Diagonal variant of a #LandLevelingIterator. */
+class DiagonalLandLevelingIterator : public LandLevelingIterator, protected DiagonalTileIteratorController {
+public:
+	DiagonalLandLevelingIterator(TileIndex begin, TileIndex end, int target_height) : LandLevelingIterator(begin, target_height)
+	{
+		this->Init(this->MyIndex(), end, this->MyMap());
+	}
+
+	TileIterator &operator ++ ()
+	{
+		this->Advance(this->MyIndex(), this->MyMap());
+		return *this;
+	}
+};
+
+/** Terraforming iterator for leveling an area for pasting purposes. */
+class PasteLandLevelingIterator : public OrthogonalLandLevelingIterator {
+protected:
+	CopyPasteLevelVariant variant;
+
+public:
+	PasteLandLevelingIterator(const TileArea &ta, int target_height, CopyPasteLevelVariant variant)
+		: OrthogonalLandLevelingIterator(ta, target_height), variant(variant)
+	{
+	}
+
+	virtual int GetTileTargetHeight() const
+	{
+		uint ret = this->target_height;
+		switch (this->variant) {
+			case CPLV_LEVEL_ABOVE: ret = min(ret, TileHeight(*this)); break;
+			case CPLV_LEVEL_BELOW: ret = max(ret, TileHeight(*this)); break;
+		}
+		return ret;
+	}
+};
+
+/** Terraforming iterator for copy-pasting tile heights. */
+class HeightsCopyPastingIterator : public TerraformingIterator, protected TransformationTileIteratorController {
+protected:
+	GenericTileIndex src_tile; ///< Current tile of the source area.
+	int height_delta;          ///< Amount of units to add to each height
+
+public:
+	HeightsCopyPastingIterator(const GenericTileArea &src_area, TileIndex transformed_north, DirTransformation transformation, int height_delta)
+		: TerraformingIterator(transformed_north), src_tile(src_area.tile), height_delta(height_delta)
+	{
+		this->Init(&IndexOf(this->src_tile), this->MyIndex(), src_area.w, src_area.h, transformation);
+	}
+
+	virtual TileIterator &operator ++()
+	{
+		this->Advance(&IndexOf(this->src_tile), MapOf(this->src_tile), this->MyIndex(), this->MyMap());
+		return *this;
+	}
+
+	virtual int GetTileTargetHeight() const
+	{
+		return TileHeight(this->src_tile) + this->height_delta;
+	}
+};
+
+/** Compound result of a terraform process. */
+struct TerraformTilesResult {
+	Money    cost;       ///< Overal cost.
+	bool had_success;    ///< Whether any success occured.
+	StringID last_error; ///< Last error, STR_NULL if there were no errors.
+};
+
+static TerraformTilesResult TerraformTiles(TerraformingIterator *iter, DoCommandFlag flags, Money available_money = GetAvailableMoneyForCommand());
 
 /**
  * Levels a selected (rectangle) area of land
@@ -397,42 +549,146 @@ CommandCost CmdLevelLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 
 {
 	if (p1 >= MapSize()) return CMD_ERROR;
 
-	_terraform_err_tile = INVALID_TILE;
-
-	/* remember level height */
-	uint oldh = TileHeight(p1);
-
 	/* compute new height */
-	uint h = oldh;
-	LevelMode lm = (LevelMode)GB(p2, 1, 2);
-	switch (lm) {
+	int h = TileHeight(p1);
+	switch ((LevelMode)GB(p2, 1, 2)) {
 		case LM_LEVEL: break;
 		case LM_RAISE: h++; break;
 		case LM_LOWER: h--; break;
 		default: return CMD_ERROR;
 	}
 
-	/* Check range of destination height */
-	if (h > MAX_TILE_HEIGHT) return_cmd_error((oldh == 0) ? STR_ERROR_ALREADY_AT_SEA_LEVEL : STR_ERROR_TOO_HIGH);
+	TerraformTilesResult ret;
+	if (HasBit(p2, 0)) {
+		DiagonalLandLevelingIterator iter(tile, p1, h);
+		ret = TerraformTiles(&iter, flags);
+	} else {
+		OrthogonalLandLevelingIterator iter(TileArea(tile, p1), h);
+		ret = TerraformTiles(&iter, flags);
+	}
 
-	Money money = GetAvailableMoneyForCommand();
-	CommandCost cost(EXPENSES_CONSTRUCTION);
-	CommandCost last_error(lm == LM_LEVEL ? STR_ERROR_ALREADY_LEVELLED : INVALID_STRING_ID);
-	bool had_success = false;
+	/* If there were only errors then fail with the last one. */
+	if (!ret.had_success && ret.last_error != STR_NULL) return_cmd_error(ret.last_error);
+	/* Return overal cost. */
+	return CommandCost(EXPENSES_CONSTRUCTION, ret.cost);
+}
+
+/**
+ * Terraform tiles as a part of a pasting process.
+ * @param iter iterator to use when terraforming
+ */
+static void TerraformPasteTiles(TerraformingIterator *iter)
+{
+	TileIndex start_tile = *iter;
+
+	/* Do actual terraforming. */
+	TerraformTilesResult ret = TerraformTiles(iter, _current_pasting->dc_flags | DC_ALL_TILES, _current_pasting->GetAvailableMoney());
+
+	/* When copy-pasting, we want to higlight error tiles more frequently. TerraformTiles
+	 * doesn't always set the _terraform_err_tile (on some errors it's just INVALID_TILE).
+	 * We will assume the start tile in these cases. This will give a better overview on
+	 * what area failed to paste. */
+	if (_terraform_err_tile == INVALID_TILE) _terraform_err_tile = start_tile;
+
+	/* Collect overal cost of the operation. */
+	if (ret.had_success) {
+		_current_pasting->CollectCost(CommandCost(EXPENSES_CONSTRUCTION, ret.cost), _terraform_err_tile, STR_ERROR_CAN_T_LEVEL_LAND_HERE);
+	}
+
+	/* Handle _additional_cash_required */
+	if ((_current_pasting->dc_flags & DC_EXEC) && _additional_cash_required > 0) {
+		SetDParam(0, _additional_cash_required);
+		_current_pasting->CollectError(_terraform_err_tile, STR_ERROR_NOT_ENOUGH_CASH_REQUIRES_CURRENCY, STR_ERROR_CAN_T_LEVEL_LAND_HERE);
+	}
+
+	/* Collect last error, if any. */
+	if (ret.last_error != STR_NULL) {
+		_current_pasting->CollectError(_terraform_err_tile, ret.last_error, STR_ERROR_CAN_T_LEVEL_LAND_HERE);
+	}
+}
+
+/**
+ * Level land (as a part of a pasting process).
+ *
+ * @param ta Area of tiles corners to level.
+ * @param height Desired height.
+ * @param variant Leveling variant.
+ */
+void LevelPasteLand(const TileArea &ta, uint height, CopyPasteLevelVariant variant)
+{
+	PasteLandLevelingIterator iter(ta, height, variant);
+	TerraformPasteTiles(&iter);
+}
+
+/**
+ * Copy and paste heights from one map to another.
+ *
+ * @param src_area Area to read heights from. It consists of tiles, not of tile corners
+ *                  e.g. if you pass a single tile area then 4 corners will be terraformed.
+ * @param dst_area_north Norhern tile of the area to write heigths at.
+ * @param transformation Transformation to perform on tile indices.
+ * @param height_delta Offset, number of units to add to each height.
+ */
+void CopyPasteHeights(const GenericTileArea &src_area, GenericTileIndex dst_area_north, DirTransformation transformation, int height_delta)
+{
+	/* include also corners at SW and SE edges */
+	GenericTileArea src_corners(src_area.tile, src_area.w + 1, src_area.h + 1);
+	/* transform the most northern corner */
+	GenericTileIndex transformed_north_corner = src_corners.TransformedNorth(dst_area_north, transformation);
+
+#ifdef WITH_ASSERT
+	{
+		assert(IsValidTileIndex(dst_area_north));
+		uint x = TileX(dst_area_north);
+		uint y = TileY(dst_area_north);
+		assert(!IsMainMapTile(dst_area_north) || !_settings_game.construction.freeform_edges || (x > 0 && y > 0));
+		Dimension dst_dim = { src_corners.w, src_corners.h };
+		dst_dim = TransformDimension(dst_dim, transformation);
+		assert(x + dst_dim.width <= MapSizeX(MapOf(dst_area_north)) && y + dst_dim.height <= MapSizeY(MapOf(dst_area_north)));
+	}
+#endif /* WITH_ASSERT */
+
+	if (IsMainMapTile(dst_area_north)) {
+		HeightsCopyPastingIterator iter(src_corners, AsMainMapTile(transformed_north_corner), transformation, height_delta);
+		TerraformPasteTiles(&iter);
+	} else {
+		for (TransformationTileIteratorT<true, true> iter(src_corners, transformed_north_corner, transformation); IsValidTileIndex(iter); ++iter) {
+			SetTileHeight(iter.DstTile(), TileHeight(iter.SrcTile()));
+		}
+	}
+}
+
+/**
+ * Terraform multiple tiles.
+ *
+ * @param iter Iterator pointing tiles to terraform and their target heights.
+ * @return The cost of all successfull operations and the last error.
+ *
+ * @note _terraform_err_tile will be set to the tile where the last error occured
+ *
+ * @warning Note non-standard return behaviour - booth the cost \b and the error combined.
+ */
+static TerraformTilesResult TerraformTiles(TerraformingIterator *iter, DoCommandFlag flags, Money available_money)
+{
+	TerraformTilesResult result = {
+		0,       // cost
+		false,   // had_success
+		STR_NULL // last_error
+	};
+	TileIndex last_err_tile = INVALID_TILE;
 
 	const Company *c = Company::GetIfValid(_current_company);
 	int limit = (c == NULL ? INT32_MAX : GB(c->terraform_limit, 16, 16));
-	if (limit == 0) return_cmd_error(STR_ERROR_TERRAFORM_LIMIT_REACHED);
+	if (limit == 0) result.last_error = STR_ERROR_TERRAFORM_LIMIT_REACHED;
 
-	TileArea ta(tile, p1);
-	TileIterator *iter = HasBit(p2, 0) ? (TileIterator *)new DiagonalTileIterator(tile, p1) : new OrthogonalTileIterator(ta);
-	for (; *iter != INVALID_TILE; ++(*iter)) {
+	for (; *iter != INVALID_TILE && limit > 0; ++(*iter)) {
+		int h = iter->GetTileTargetHeight();
 		TileIndex t = *iter;
-		uint curh = TileHeight(t);
-		while (curh != h) {
+		for (int curh = TileHeight(t); curh != h; curh += (curh > h) ? -1 : 1) {
 			CommandCost ret = DoCommand(t, SLOPE_N, (curh > h) ? 0 : 1, flags & ~DC_EXEC, CMD_TERRAFORM_LAND);
 			if (ret.Failed()) {
-				last_error = ret;
+				result.last_error = ret.GetErrorMessage();
+				last_err_tile = _terraform_err_tile;
 
 				/* Did we reach the limit? */
 				if (ret.GetErrorMessage() == STR_ERROR_TERRAFORM_LIMIT_REACHED) limit = 0;
@@ -440,11 +696,11 @@ CommandCost CmdLevelLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 
 			}
 
 			if (flags & DC_EXEC) {
-				money -= ret.GetCost();
-				if (money < 0) {
+				available_money -= ret.GetCost();
+				if (available_money < 0) {
 					_additional_cash_required = ret.GetCost();
-					delete iter;
-					return cost;
+					_terraform_err_tile = t;
+					return result;
 				}
 				DoCommand(t, SLOPE_N, (curh > h) ? 0 : 1, flags, CMD_TERRAFORM_LAND);
 			} else {
@@ -453,20 +709,22 @@ CommandCost CmdLevelLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 
 				 * when it's near the terraforming limit. Even then, the estimation is
 				 * completely off due to it basically counting terraforming double, so it being
 				 * cut off earlier might even give a better estimate in some cases. */
-				if (--limit <= 0) {
-					had_success = true;
+				if (--limit <= 0)  {
+					result.had_success = true;
 					break;
 				}
 			}
 
-			cost.AddCost(ret);
-			curh += (curh > h) ? -1 : 1;
-			had_success = true;
+			result.cost += ret.GetCost();
+			result.had_success = true;
 		}
-
-		if (limit <= 0) break;
 	}
 
-	delete iter;
-	return had_success ? cost : last_error;
+	if (!result.had_success && result.last_error == STR_NULL) {
+		result.last_error = STR_ERROR_ALREADY_LEVELLED;
+		last_err_tile = INVALID_TILE;
+	}
+
+	_terraform_err_tile = last_err_tile;
+	return result;
 }

@@ -13,13 +13,15 @@
 #include "tile_cmd.h"
 #include "command_func.h"
 #include "viewport_func.h"
+#include "slope_func.h"
 
 #include "table/strings.h"
 #include "table/sprites.h"
 
 static void DrawTile_Void(TileInfo *ti)
 {
-	DrawGroundSprite(SPR_SHADOW_CELL, PAL_NONE);
+	DrawGroundSprite(SPR_FLAT_BLACKTILES + SlopeToSpriteOffset(ti->tileh), PAL_NONE);
+//DrawGroundSprite(SPR_SHADOW_CELL + SlopeToSpriteOffset(ti->tileh), PAL_NONE);
 }
 
 
@@ -80,4 +82,5 @@ extern const TileTypeProcs _tile_type_void_procs = {
 	NULL,                     // vehicle_enter_tile_proc
 	GetFoundation_Void,       // get_foundation_proc
 	TerraformTile_Void,       // terraform_tile_proc
+	NULL                      // copypaste_tile_proc
 };

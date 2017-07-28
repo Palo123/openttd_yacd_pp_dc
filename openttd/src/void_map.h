@@ -18,17 +18,22 @@
  * Make a nice void tile ;)
  * @param t the tile to make void
  */
-static inline void MakeVoid(TileIndex t)
+template <bool Tgeneric>
+static inline void MakeVoid(typename TileIndexT<Tgeneric>::T t)
 {
 	SetTileType(t, MP_VOID);
 	SetTileHeight(t, 0);
-	_m[t].m1 = 0;
-	_m[t].m2 = 0;
-	_m[t].m3 = 0;
-	_m[t].m4 = 0;
-	_m[t].m5 = 0;
-	_m[t].m6 = 0;
-	_me[t].m7 = 0;
+	GetTile(t)->m1 = 0;
+	GetTile(t)->m2 = 0;
+	GetTile(t)->m3 = 0;
+	GetTile(t)->m4 = 0;
+	GetTile(t)->m5 = 0;
+	GetTileEx(t)->m6 = 0;
+	GetTileEx(t)->m7 = 0;
 }
+/** @copydoc MakeVoid(TileIndexT<Tgeneric>::T) */
+static inline void MakeVoid(TileIndex t) { MakeVoid<false>(t); }
+/** @copydoc MakeVoid(TileIndexT<Tgeneric>::T) */
+static inline void MakeVoid(GenericTileIndex t) { MakeVoid<true>(t); }
 
 #endif /* VOID_MAP_H */

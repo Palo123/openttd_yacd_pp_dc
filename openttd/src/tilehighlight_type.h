@@ -28,6 +28,8 @@ enum HighLightStyle {
 	HT_RAIL      = 0x080, ///< autorail (one piece), lower bits: direction
 	HT_VEHICLE   = 0x100, ///< vehicle is accepted as target as well (bitmask)
 	HT_DIAGONAL  = 0x200, ///< Also allow 'diagonal rectangles'. Only usable in combination with #HT_RECT or #HT_POINT.
+	HT_POLY      = 0x400, ///< polyline mode; connect highlighted track with previous one
+	HT_PASTE_PREVIEW = 0x400, ///< Preview of a paste result. Only usable in combination with #HT_POINT.
 	HT_DRAG_MASK = 0x0F8, ///< Mask for the tile drag-type modes.
 
 	/* lower bits (used with HT_LINE and HT_RAIL):

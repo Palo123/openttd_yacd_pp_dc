@@ -30,6 +30,9 @@
 
 #include "table/sprites.h"
 
+// MYGUI_NOEND
+#include "aaa_template_gui_main.h"
+
 typedef GUIList<const Group*> GUIGroupList;
 
 static const NWidgetPart _nested_group_widgets[] = {
@@ -50,6 +53,7 @@ static const NWidgetPart _nested_group_widgets[] = {
 						SetFill(1, 0), SetResize(0, 1), SetScrollbar(WID_GL_LIST_GROUP_SCROLLBAR),
 				NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WID_GL_LIST_GROUP_SCROLLBAR),
 			EndContainer(),
+			NWidget(WWT_PANEL, COLOUR_GREY, WID_GL_INFO), SetMinimalSize(200, 25), SetFill(1, 0), EndContainer(),
 			NWidget(NWID_HORIZONTAL),
 				NWidget(WWT_PUSHIMGBTN, COLOUR_GREY, WID_GL_CREATE_GROUP), SetFill(0, 1),
 						SetDataTip(SPR_GROUP_CREATE_TRAIN, STR_GROUP_CREATE_TOOLTIP),
@@ -342,6 +346,9 @@ public:
 				max_icon_height = max(max_icon_height, GetSpriteSize(this->GetWidget<NWidgetCore>(WID_GL_DELETE_GROUP)->widget_data).height);
 				max_icon_height = max(max_icon_height, GetSpriteSize(this->GetWidget<NWidgetCore>(WID_GL_REPLACE_PROTECTION)->widget_data).height);
 
+				/* ... minus the height of the group info ... */
+				max_icon_height += 25;
+				
 				/* Get a multiple of tiny_step_height of that amount */
 				size->height = Ceil(size->height - max_icon_height, tiny_step_height);
 				break;
@@ -499,6 +506,29 @@ public:
 				DrawGroupInfo(r.top + WD_FRAMERECT_TOP, r.left, r.right, DEFAULT_GROUP);
 				break;
 
+			case WID_GL_INFO: {
+				Money this_year = 0;
+				Money last_year = 0;
+
+				for (uint i = 0, vehicle_count = this->vehicles.Length(); i < vehicle_count; i++) {
+					const Vehicle *v = this->vehicles[i];
+
+					assert(v->owner == this->owner);
+
+					if (this->vli.index == ALL_GROUP || v->group_id == this->vli.index) {
+						this_year += v->GetDisplayProfitThisYear();
+						last_year += v->GetDisplayProfitLastYear();
+					}
+				}
+
+				SetDParam(0, this_year);
+				DrawString(r.left + WD_FRAMERECT_LEFT + 8, r.right - WD_FRAMERECT_RIGHT - 8, r.top + WD_FRAMERECT_TOP + 1, STR_GROUP_PROFIT_THIS_YEAR);
+				SetDParam(0, last_year);
+				DrawString(r.left + WD_FRAMERECT_LEFT + 8, r.right - WD_FRAMERECT_RIGHT - 8, r.top + WD_FRAMERECT_TOP + FONT_HEIGHT_NORMAL + 2, STR_GROUP_PROFIT_LAST_YEAR, TC_BLACK);
+
+				break;
+			}
+
 			case WID_GL_LIST_GROUP: {
 				int y1 = r.top + WD_FRAMERECT_TOP;
 				int max = min(this->group_sb->GetPosition() + this->group_sb->GetCapacity(), this->groups.Length());
@@ -593,6 +623,7 @@ public:
 				this->vli.index = ALL_GROUP;
 
 				DoCommandP(0, group, 0, CMD_DELETE_GROUP | CMD_MSG(STR_ERROR_GROUP_CAN_T_DELETE));
+				InvalidateWindowData(WC_TEMPLATEGUI_MAIN, 0, 0, 0);
 				break;
 			}
 
@@ -666,6 +697,16 @@ public:
 				}
 				break;
 			}
+			case WID_GL_CREATE_GROUP: { // make new group with vehicle specific name and add vehicle
+				const VehicleID vindex = this->vehicle_sel;
+				this->vehicle_sel = INVALID_VEHICLE;
+				this->group_over = INVALID_GROUP;
+				this->SetDirty();
+
+				DoCommandP(0, vindex | (_ctrl_pressed ? 1 << 31 : 0),0 , CMD_CREATE_GROUP_SPECIFIC_NAME | CMD_MSG(STR_ERROR_GROUP_CAN_T_CREATE_SPECIFIC_NAME),  NULL);
+				
+				break;
+			}
 		}
 		_cursor.vehchain = false;
 	}
@@ -673,6 +714,7 @@ public:
 	virtual void OnQueryTextFinished(char *str)
 	{
 		if (str != NULL) DoCommandP(0, this->group_rename, 0, CMD_RENAME_GROUP | CMD_MSG(STR_ERROR_GROUP_CAN_T_RENAME), NULL, str);
+		InvalidateWindowData(WC_TEMPLATEGUI_MAIN, 0, 0, 0);
 		this->group_rename = INVALID_GROUP;
 	}
 
@@ -698,6 +740,11 @@ public:
 				assert(this->vehicles.Length() != 0);
 
 				switch (index) {
+					case ADI_TEMPLATE_REPLACE: // TemplateReplace Window
+						if ( vli.vtype == VEH_TRAIN )
+							// TODO before we used vli.company in the main gui, maybe retrieve it here and pass it as param to the gui ?
+							ShowTemplateReplaceWindow(this->unitnumber_digits, this->resize.step_height);
+						break;
 					case ADI_REPLACE: // Replace window
 						ShowReplaceGroupVehicleWindow(this->vli.index, this->vli.vtype);
 						break;
@@ -796,7 +843,6 @@ public:
 		if (this->vehicle_sel == vehicle) ResetObjectToPlace();
 	}
 };
-
 
 static WindowDesc _other_group_desc(
 	WDP_AUTO, 460, 246,

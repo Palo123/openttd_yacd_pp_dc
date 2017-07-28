@@ -31,6 +31,8 @@
 #include "pathfinder/opf/opf_ship.h"
 #include "engine_base.h"
 #include "company_base.h"
+#include "infrastructure_func.h"
+#include "cargotype.h"
 #include "tunnelbridge_map.h"
 #include "zoom_func.h"
 
@@ -132,7 +134,7 @@ static const Depot *FindClosestShipDepot(const Vehicle *v, uint max_distance)
 
 	FOR_ALL_DEPOTS(depot) {
 		TileIndex tile = depot->xy;
-		if (IsShipDepotTile(tile) && IsTileOwner(tile, v->owner)) {
+		if (IsShipDepotTile(tile) && IsInfraTileUsageAllowed(VEH_SHIP, v->owner, tile)) {
 			uint dist = DistanceManhattan(tile, v->tile);
 			if (dist < best_dist) {
 				best_dist = dist;
@@ -181,6 +183,7 @@ static void CheckIfShipNeedsService(Vehicle *v)
 void Ship::UpdateCache()
 {
 	const ShipVehicleInfo *svi = ShipVehInfo(this->engine_type);
+	this->vcache.cached_cargo_mask = (this->cargo_type != INVALID_CARGO && this->cargo_cap > 0) ? 1 << this->cargo_type : 0;
 
 	/* Get speed fraction for the current water type. Aqueducts are always canals. */
 	bool is_ocean = GetEffectiveWaterClass(this->tile) == WATER_CLASS_SEA;
@@ -496,6 +499,24 @@ static const byte _ship_subcoord[4][6][3] = {
 	}
 };
 
+/* Used to find DiagDirection from tile to next tile if track is followed */
+static const DiagDirection _diagdir_to_next_tile[6][4] = {
+	{ DIAGDIR_NE, DIAGDIR_SE, DIAGDIR_SW, DIAGDIR_NW },
+	{ DIAGDIR_NE, DIAGDIR_SE, DIAGDIR_SW, DIAGDIR_NW },
+	{ DIAGDIR_SE, DIAGDIR_NE, DIAGDIR_NW, DIAGDIR_SW },
+	{ DIAGDIR_SE, DIAGDIR_NW, DIAGDIR_NE, DIAGDIR_SW },
+	{ DIAGDIR_NW, DIAGDIR_SW, DIAGDIR_SE, DIAGDIR_NE },
+	{ DIAGDIR_SW, DIAGDIR_NW, DIAGDIR_SE, DIAGDIR_NE }
+};
+
+/** Helper function for collision avoidance. */
+static Vehicle *FindShipOnTile(Vehicle *v, void *data)
+{
+	if (v->type != VEH_SHIP || v->vehstatus & VS_STOPPED) return NULL;
+
+	return v;
+}
+
 static void ShipController(Ship *v)
 {
 	uint32 r;
@@ -558,14 +579,13 @@ static void ShipController(Ship *v)
 									return;
 								}
 							} else if (v->current_order.IsType(OT_GOTO_STATION)) {
-								v->last_station_visited = v->current_order.GetDestination();
-
 								/* Process station in the orderlist. */
 								Station *st = Station::Get(v->current_order.GetDestination());
 								if (st->facilities & FACIL_DOCK) { // ugly, ugly workaround for problem with ships able to drop off cargo at wrong stations
 									ShipArrivesAt(v, st);
-									v->BeginLoading();
+									v->BeginLoading(st->index);
 								} else { // leave stations without docks right aways
+									v->last_station_visited = v->current_order.GetDestination();
 									v->current_order.MakeLeaveStation();
 									v->IncrementRealOrderIndex();
 								}
@@ -587,6 +607,25 @@ static void ShipController(Ship *v)
 			/* Choose a direction, and continue if we find one */
 			track = ChooseShipTrack(v, gp.new_tile, diagdir, tracks);
 			if (track == INVALID_TRACK) goto reverse_direction;
+
+			/* Try to avoid collision and keep distance between each other. */
+			if (_settings_game.pf.forbid_90_deg && DistanceManhattan(v->dest_tile, gp.new_tile) > 3) {
+				if (HasVehicleOnPos(gp.new_tile, NULL, &FindShipOnTile) ||
+						HasVehicleOnPos(TileAddByDiagDir(gp.new_tile, _diagdir_to_next_tile[track][diagdir]), NULL, &FindShipOnTile)) {
+
+					v->cur_speed /= 4; // Go quarter speed.
+
+					Track old = track;
+					switch (tracks) {
+						default: break;
+						case TRACK_BIT_3WAY_NE: track == TRACK_RIGHT ? track = TRACK_X : track = TRACK_UPPER; break;
+						case TRACK_BIT_3WAY_SE: track == TRACK_LOWER ? track = TRACK_Y : track = TRACK_RIGHT; break;
+						case TRACK_BIT_3WAY_SW: track == TRACK_LEFT  ? track = TRACK_X : track = TRACK_LOWER; break;
+						case TRACK_BIT_3WAY_NW: track == TRACK_UPPER ? track = TRACK_Y : track = TRACK_LEFT;  break;
+					}
+					if (!IsWaterTile(gp.new_tile) || !IsWaterTile(TileAddByDiagDir(gp.new_tile, _diagdir_to_next_tile[track][diagdir]))) track = old; // Don't bump in coast, don't get stuck.
+				}
+			}
 
 			b = _ship_subcoord[diagdir][track];
 

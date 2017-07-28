@@ -349,6 +349,7 @@ uint32 GetTerrainType(TileIndex tile, TileContext context)
 {
 	switch (_settings_game.game_creation.landscape) {
 		case LT_TROPIC: return GetTropicZone(tile);
+		case LT_TEMPERATE:
 		case LT_ARCTIC: {
 			bool has_snow;
 			switch (GetTileType(tile)) {

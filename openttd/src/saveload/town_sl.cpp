@@ -249,6 +249,8 @@ static void RealSave_Town(Town *t)
 		SlObject(&t->received[i], _town_received_desc);
 	}
 
+	t->SaveCargoSourceSink();
+
 	if (IsSavegameVersionBefore(166)) return;
 
 	SlObject(&t->cargo_accepted, GetTileMatrixDesc());
@@ -287,6 +289,8 @@ static void Load_TOWN()
 			SlErrorCorrupt("Invalid town name generator");
 		}
 
+		t->LoadCargoSourceSink();
+
 		if (IsSavegameVersionBefore(166)) continue;
 
 		SlObject(&t->cargo_accepted, GetTileMatrixDesc());
@@ -298,16 +302,26 @@ static void Load_TOWN()
 			/* Rebuild total cargo acceptance. */
 			UpdateTownCargoTotal(t);
 		}
+
+		/* Cache the aligned tile index of the centre tile. */
+		uint town_x = (TileX(t->xy) / AcceptanceMatrix::GRID) * AcceptanceMatrix::GRID;
+		uint town_y = (TileY(t->xy) / AcceptanceMatrix::GRID) * AcceptanceMatrix::GRID;
+		t->xy_aligned= TileXY(town_x, town_y);
 	}
 }
 
 /** Fix pointers when loading town data. */
 static void Ptrs_TOWN()
 {
+	Town *t;
+
+	FOR_ALL_TOWNS(t) {
+		t->PtrsCargoSourceSink();
+	}
+
 	/* Don't run when savegame version lower than 161. */
 	if (IsSavegameVersionBefore(161)) return;
 
-	Town *t;
 	FOR_ALL_TOWNS(t) {
 		SlObject(t, _town_desc);
 	}

@@ -93,7 +93,7 @@ void MoveBuoysToWaypoints()
 			TILE_AREA_LOOP(t, train_st) {
 				if (!IsTileType(t, MP_STATION) || GetStationIndex(t) != index) continue;
 
-				SB(_m[t].m6, 3, 3, STATION_WAYPOINT);
+				SB(_main_map.me[t].m6, 3, 3, STATION_WAYPOINT);
 				wp->rect.BeforeAddTile(t, StationRect::ADD_FORCE);
 			}
 
@@ -258,7 +258,10 @@ const SaveLoad *GetGoodsDesc()
 		SLEG_CONDVAR(            _cargo_feeder_share, SLE_FILE_U32 | SLE_VAR_I64, 14, 64),
 		SLEG_CONDVAR(            _cargo_feeder_share, SLE_INT64,                  65, 67),
 		 SLE_CONDVAR(GoodsEntry, amount_fract,        SLE_UINT8,                 150, SL_MAX_VERSION),
+		 SLE_CONDVAR(GoodsEntry, cargo_counter,       SLE_UINT16,                181, SL_MAX_VERSION),
 		 SLE_CONDLST(GoodsEntry, cargo.packets,       REF_CARGO_PACKET,           68, SL_MAX_VERSION),
+		 SLE_CONDVAR(GoodsEntry, cargo.next_start,    SLE_UINT32,                181, SL_MAX_VERSION),
+		 SLE_CONDLST(GoodsEntry, routes,              REF_ROUTE_LINK,            181, SL_MAX_VERSION),
 
 		SLE_END()
 	};
@@ -362,7 +365,9 @@ static const SaveLoad _station_desc[] = {
 	  SLE_CONDVAR(Station, airport.h,                  SLE_FILE_U8 | SLE_VAR_U16, 140, SL_MAX_VERSION),
 	      SLE_VAR(Station, airport.type,               SLE_UINT8),
 	  SLE_CONDVAR(Station, airport.layout,             SLE_UINT8,                 145, SL_MAX_VERSION),
+	  SLE_CONDVAR(Station, airport.num_circle,         SLE_UINT8,                 181, SL_MAX_VERSION),
 	      SLE_VAR(Station, airport.flags,              SLE_UINT64),
+	  SLE_CONDVAR(Station, airport.flags2,             SLE_UINT64,                181, SL_MAX_VERSION),
 	  SLE_CONDVAR(Station, airport.rotation,           SLE_UINT8,                 145, SL_MAX_VERSION),
 	 SLEG_CONDARR(_old_st_persistent_storage.storage,  SLE_UINT32, 16,            145, 160),
 	  SLE_CONDREF(Station, airport.psa,                REF_STORAGE,               161, SL_MAX_VERSION),

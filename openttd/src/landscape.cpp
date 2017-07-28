@@ -21,6 +21,7 @@
 #include "void_map.h"
 #include "tgp.h"
 #include "genworld.h"
+#include "town.h"
 #include "fios.h"
 #include "date_func.h"
 #include "water.h"
@@ -559,6 +560,8 @@ void SetSnowLine(byte table[SNOW_LINE_MONTHS][SNOW_LINE_DAYS])
  */
 byte GetSnowLine()
 {
+       if (_settings_game.game_creation.landscape == LT_TEMPERATE && !_settings_game.construction.snow_in_temperate) return 0xFF;
+
 	if (_snow_line == NULL) return _settings_game.game_creation.snow_line_height;
 
 	YearMonthDay ymd;
@@ -635,7 +638,43 @@ CommandCost CmdLandscapeClear(TileIndex tile, DoCommandFlag flags, uint32 p1, ui
 			return_cmd_error(STR_ERROR_CAN_T_BUILD_ON_WATER);
 		}
 	} else {
-		cost.AddCost(_tile_type_procs[GetTileType(tile)]->clear_tile_proc(tile, flags));
+
+   		TileType type = GetTileType(tile);
+		cost.AddCost(_tile_type_procs[type]->clear_tile_proc(tile, flags));
+
+		/* construction near towns is more expensive with the town construction cost patch enabled */
+		if (_settings_game.economy.town_construction_cost) {
+			const Town *t = ClosestTownFromTile(tile, (uint)-1);
+			if (t != NULL) { ///< this if is required or scenario editor will crash with no towns on certain actions
+				uint distance = DistanceSquare(tile, t->xy);
+				switch(type) {
+
+					case MP_HOUSE: ///< demolishing a house is expensive especially in large cities
+						if (t->cache.population < 600) break;
+						cost.MultiplyCost(((t->cache.population / 408) * (1024 / (distance + 1)) / 2) + 1);
+						break;
+
+					case MP_WATER: ///< make levelling and demolishing on water a little less expensive
+						if (t->cache.population < 600) break;
+						cost.MultiplyCost(((t->cache.population / 408) * (1024 / (distance + 1)) / 48) + 1);
+						break;
+
+					case MP_ROAD: ///< building and demolishing road should be a little easier
+						cost.MultiplyCost((((t->cache.population + 1) / 640) * (1536 / (distance + 1)) / 8) + 1);
+						break;
+
+					case MP_RAILWAY: case MP_OBJECT: ///< don't give you more money on selling than you paid
+						if (t->cache.population < 999999) break; ///< to fix exploits until a better solution is found
+						cost.MultiplyCost(((t->cache.population / 512) * (1536 / (distance + 1)) / 12) + 1);
+						break;
+
+					default:
+						if (t->cache.population < 800) break;
+						cost.MultiplyCost((t->cache.population / 408) * (1536 / (distance + 1)) + 1);
+						break;
+	}
+			}
+		}
 	}
 
 	if (flags & DC_EXEC) {
@@ -899,7 +938,7 @@ static void CreateDesertOrRainForest()
 		for (data = _make_desert_or_rainforest_data;
 				data != endof(_make_desert_or_rainforest_data); ++data) {
 			TileIndex t = AddTileIndexDiffCWrap(tile, *data);
-			if (t != INVALID_TILE && (TileHeight(t) >= 4 || IsTileType(t, MP_WATER))) break;
+			if (t != INVALID_TILE && (TileHeight(t) >= _settings_game.construction.max_heightlevel / 4 || IsTileType(t, MP_WATER))) break;
 		}
 		if (data == endof(_make_desert_or_rainforest_data)) {
 			SetTropicZone(tile, TROPICZONE_DESERT);
@@ -1044,15 +1083,40 @@ static void River_GetNeighbours(AyStar *aystar, OpenListNode *current)
 	}
 }
 
+/** Callback to widen a river tile. */
+static bool RiverMakeWider(TileIndex tile, void *data)
+{
+	if (IsValidTile(tile) && !IsWaterTile(tile) && GetTileSlope(tile) == GetTileSlope(*(TileIndex *)data)) {
+		MakeRiver(tile, Random());
+		/* Remove desert directly around the river tile. */
+		TileIndex cur_tile = tile;
+		CircularTileSearch(&cur_tile, 5, RiverModifyDesertZone, NULL);
+	}
+	return false;
+}
+
 /* AyStar callback when an route has been found. */
 static void River_FoundEndNode(AyStar *aystar, OpenListNode *current)
 {
+	/* Count river length. */
+	uint length = 0;
 	for (PathNode *path = &current->path; path != NULL; path = path->parent) {
+		length++;
+	}
+
+	uint cur_pos = 0;
+	for (PathNode *path = &current->path; path != NULL; path = path->parent, cur_pos++) {
 		TileIndex tile = path->node.tile;
 		if (!IsWaterTile(tile)) {
 			MakeRiver(tile, Random());
-			/* Remove desert directly around the river tile. */
-			CircularTileSearch(&tile, 5, RiverModifyDesertZone, NULL);
+			/* Widen river depending on how far we are away from the source. */
+			uint radius = min((length - cur_pos) / 15u, 3u);
+			if (radius > 1) {
+				CircularTileSearch(&tile, radius + RandomRange(1), RiverMakeWider, (void *)&path->node.tile);
+			} else {
+				/* Remove desert directly around the river tile. */
+				CircularTileSearch(&tile, 5, RiverModifyDesertZone, NULL);
+			}
 		}
 	}
 }

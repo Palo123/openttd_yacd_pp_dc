@@ -1,13 +1,28 @@
 # Source Files
+aaa_template_gui_main.cpp
+aaa_template_gui_create.cpp
+aaa_template_gui_create_virtualtrain.cpp
+aaa_template_gui_replaceall.cpp
+aaa_template_vehicle.cpp
+aaa_template_vehicle_func.cpp
+aaa_template_gui_main.h
+aaa_template_gui_create.h
+aaa_template_gui_create_virtualtrain.h
+aaa_template_gui_replaceall.h
+aaa_template_vehicle.h
+aaa_template_vehicle_func.h
+
 airport.cpp
 animated_tile.cpp
 articulated_vehicles.cpp
 autoreplace.cpp
 bmp.cpp
+cargodest.cpp
 cargomonitor.cpp
 cargopacket.cpp
 cargotype.cpp
 cheat.cpp
+clipboard.cpp
 command.cpp
 console.cpp
 console_cmds.cpp
@@ -16,6 +31,7 @@ currency.cpp
 date.cpp
 debug.cpp
 dedicated.cpp
+departures.cpp
 depot.cpp
 driver.cpp
 economy.cpp
@@ -36,6 +52,7 @@ goal.cpp
 ground_vehicle.cpp
 heightmap.cpp
 highscore.cpp
+infrastructure.cpp
 hotkeys.cpp
 ini.cpp
 ini_load.cpp
@@ -83,6 +100,8 @@ tgp.cpp
 tile_map.cpp
 tilearea.cpp
 townname.cpp
+triphistory_cmd.cpp
+trafficlight.cpp
 #if WIN32
 #else
 	#if WINCE
@@ -127,12 +146,19 @@ base_station_base.h
 bmp.h
 bridge.h
 cargo_type.h
+cargodest_base.h
+cargodest_func.h
+cargodest_gui.h
+cargodest_type.h
 cargomonitor.h
 cargopacket.h
 cargotype.h
 cheat_func.h
 cheat_type.h
 clear_func.h
+clipboard_func.h
+clipboard_gui.h
+clipboard_type.h
 cmd_helper.h
 command_func.h
 command_type.h
@@ -145,6 +171,7 @@ console_func.h
 console_gui.h
 console_internal.h
 console_type.h
+copypaste_cmd.h
 crashlog.h
 currency.h
 date_func.h
@@ -152,6 +179,9 @@ date_gui.h
 date_type.h
 debug.h
 video/dedicated_v.h
+departures_func.h
+departures_gui.h
+departures_type.h
 depot_base.h
 depot_func.h
 depot_map.h
@@ -200,6 +230,7 @@ house_type.h
 industry.h
 industry_type.h
 industrytype.h
+infrastructure_func.h
 ini_type.h
 landscape.h
 landscape_type.h
@@ -208,6 +239,7 @@ livery.h
 map_func.h
 map_type.h
 mixer.h
+triphistory.h
 network/network.h
 network/network_admin.h
 network/network_base.h
@@ -256,6 +288,7 @@ music/null_m.h
 sound/null_s.h
 video/null_v.h
 object.h
+triphistory_gui.cpp
 object_base.h
 object_type.h
 openttd.h
@@ -263,6 +296,8 @@ order_backup.h
 order_base.h
 order_func.h
 order_type.h
+overlay.h
+overlay_cmd.h
 pbs.h
 progress.h
 querystring_gui.h
@@ -325,6 +360,7 @@ textfile_type.h
 tgp.h
 tile_cmd.h
 tile_type.h
+tilearea_func.h
 tilearea_type.h
 tilehighlight_func.h
 tilehighlight_type.h
@@ -337,6 +373,9 @@ townname_func.h
 townname_type.h
 track_func.h
 track_type.h
+trafficlight.h
+trafficlight_func.h
+trafficlight_type.h
 train.h
 transparency.h
 transparency_gui.h
@@ -350,6 +389,7 @@ vehicle_type.h
 vehiclelist.h
 viewport_func.h
 viewport_type.h
+watch_gui.h
 water.h
 waypoint_base.h
 waypoint_func.h
@@ -413,10 +453,13 @@ autoreplace_gui.cpp
 bootstrap_gui.cpp
 bridge_gui.cpp
 build_vehicle_gui.cpp
+cargodest_gui.cpp
 cheat_gui.cpp
+clipboard_gui.cpp
 company_gui.cpp
 console_gui.cpp
 date_gui.cpp
+departures_gui.cpp
 depot_gui.cpp
 dock_gui.cpp
 engine_gui.cpp
@@ -461,6 +504,7 @@ transparency_gui.cpp
 tree_gui.cpp
 vehicle_gui.cpp
 viewport_gui.cpp
+watch_gui.cpp
 waypoint_gui.cpp
 
 # Widgets
@@ -471,6 +515,7 @@ widgets/bootstrap_widget.h
 widgets/bridge_widget.h
 widgets/build_vehicle_widget.h
 widgets/cheat_widget.h
+widgets/clipboard_widget.h
 widgets/company_widget.h
 widgets/console_widget.h
 widgets/date_widget.h
@@ -524,6 +569,7 @@ widgets/waypoint_widget.h
 aircraft_cmd.cpp
 autoreplace_cmd.cpp
 clear_cmd.cpp
+copypaste_cmd.cpp
 company_cmd.cpp
 depot_cmd.cpp
 disaster_cmd.cpp
@@ -532,6 +578,7 @@ industry_cmd.cpp
 misc_cmd.cpp
 object_cmd.cpp
 order_cmd.cpp
+overlay_cmd.cpp
 rail_cmd.cpp
 road_cmd.cpp
 roadveh_cmd.cpp
@@ -555,6 +602,7 @@ saveload/ai_sl.cpp
 saveload/airport_sl.cpp
 saveload/animated_tile_sl.cpp
 saveload/autoreplace_sl.cpp
+saveload/cargodest_sl.cpp
 saveload/cargomonitor_sl.cpp
 saveload/cargopacket_sl.cpp
 saveload/cheat_sl.cpp
@@ -589,6 +637,9 @@ saveload/subsidy_sl.cpp
 saveload/town_sl.cpp
 saveload/vehicle_sl.cpp
 saveload/waypoint_sl.cpp
+# MYGUI SL HANDLERS
+saveload/aaa_template_replacement_sl.cpp
+saveload/aaa_template_veh_sl.cpp
 
 # Tables
 table/airport_defaults.h
@@ -995,6 +1046,7 @@ pathfinder/yapf/yapf.h
 pathfinder/yapf/yapf.hpp
 pathfinder/yapf/yapf_base.hpp
 pathfinder/yapf/yapf_cache.h
+pathfinder/yapf/yapf_cargo.cpp
 pathfinder/yapf/yapf_common.hpp
 pathfinder/yapf/yapf_costbase.hpp
 pathfinder/yapf/yapf_costcache.hpp

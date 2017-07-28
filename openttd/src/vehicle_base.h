@@ -15,13 +15,17 @@
 #include "track_type.h"
 #include "command_type.h"
 #include "order_base.h"
+#include "triphistory.h"
 #include "cargopacket.h"
 #include "texteff.hpp"
 #include "engine_type.h"
 #include "order_func.h"
 #include "transport_type.h"
 #include "group_type.h"
+#include "timetable.h"
 #include "base_consist.h"
+
+CommandCost CmdRefitVehicle(TileIndex, DoCommandFlag, uint32, uint32, const char*);
 
 /** Vehicle status bits in #Vehicle::vehstatus. */
 enum VehStatus {
@@ -92,6 +96,7 @@ enum VisualEffect {
  * This is defined here instead of at #GroundVehicle because some common function require access to these flags.
  * Do not access it directly unless you have to. Use the subtype access functions.
  */
+// MYGUI appended virtual subtype
 enum GroundVehicleSubtypeFlags {
 	GVSF_FRONT            = 0, ///< Leading engine of a consist.
 	GVSF_ARTICULATED_PART = 1, ///< Articulated part of an engine.
@@ -99,10 +104,12 @@ enum GroundVehicleSubtypeFlags {
 	GVSF_ENGINE           = 3, ///< Engine that can be front engine, but might be placed behind another engine (not used for road vehicles).
 	GVSF_FREE_WAGON       = 4, ///< First in a wagon chain (in depot) (not used for road vehicles).
 	GVSF_MULTIHEADED      = 5, ///< Engine is multiheaded (not used for road vehicles).
+	GVSF_VIRTUAL		  = 6, ///< Used for virtual trains during template design, needed to skip checks for tile or depot status
 };
 
 /** Cached often queried values common to all vehicles. */
 struct VehicleCache {
+	uint32 cached_cargo_mask; ///< Mask of all cargoes carried by the consist.
 	uint16 cached_max_speed;        ///< Maximum speed of the consist (minimum of the max speed of all vehicles in the consist).
 	uint16 cached_cargo_age_period; ///< Number of ticks before carried cargo is aged.
 
@@ -150,6 +157,8 @@ public:
 	Money profit_this_year;             ///< Profit this year << 8, low 8 bits are fract
 	Money profit_last_year;             ///< Profit last year << 8, low 8 bits are fract
 	Money value;                        ///< Value of the vehicle
+
+	TripHistory trip_history;           ///< Trip History Info
 
 	CargoPayment *cargo_payment;        ///< The cargo payment we're currently in
 
@@ -211,6 +220,8 @@ public:
 	byte waiting_triggers;              ///< Triggers to be yet matched before rerandomizing the random bits.
 
 	StationID last_station_visited;     ///< The last station we stopped at.
+	StationID last_station_loaded;      ///< Last station the vehicle loaded cargo at.
+	OrderID   last_order_id;            ///< Order id which caused the vehicle to arrive at the last loading station.
 
 	CargoID cargo_type;                 ///< type of cargo this vehicle is carrying
 	byte cargo_subtype;                 ///< Used for livery refits (NewGRF variations)
@@ -218,6 +229,7 @@ public:
 	VehicleCargoList cargo;             ///< The cargo this vehicle is carrying
 	uint16 cargo_age_counter;           ///< Ticks till cargo is aged next.
 
+	uint32 travel_time;                 ///< Ticks since last loading
 	byte day_counter;                   ///< Increased by one for each day
 	byte tick_counter;                  ///< Increased by one for each tick
 	byte running_ticks;                 ///< Number of ticks this vehicle was not stopped this day
@@ -243,7 +255,7 @@ public:
 	/** We want to 'destruct' the right class. */
 	virtual ~Vehicle();
 
-	void BeginLoading();
+	void BeginLoading(StationID station);
 	void LeaveStation();
 
 	GroundVehicleCache *GetGroundVehicleCache();
@@ -255,6 +267,12 @@ public:
 	void DeleteUnreachedImplicitOrders();
 
 	void HandleLoading(bool mode = false);
+
+	/**
+	 * Is this vehicle drawn?
+	 * @return true if it is drawn
+	 */
+	bool IsDrawn() const;
 
 	/**
 	 * Marks the vehicles to be redrawn and updates cached variables
@@ -476,6 +494,7 @@ public:
 	Money GetDisplayProfitLastYear() const { return (this->profit_last_year >> 8); }
 
 	void SetNext(Vehicle *next);
+	inline void SetFirst(Vehicle *f) { this->first=f; }
 
 	/**
 	 * Get the next vehicle of this vehicle.
@@ -761,6 +780,8 @@ public:
 	bool HasEngineType() const;
 	bool HasDepotOrder() const;
 	void HandlePathfindingResult(bool path_found);
+	void MarkSeparationInvalid();
+	void SetSepSettings(TTSepMode Mode, uint Parameter);
 
 	/**
 	 * Check if the vehicle is a front engine.
@@ -1042,6 +1063,10 @@ struct SpecializedVehicle : public Vehicle {
 struct DisasterVehicle FINAL : public SpecializedVehicle<DisasterVehicle, VEH_DISASTER> {
 	SpriteID image_override;            ///< Override for the default disaster vehicle sprite.
 	VehicleID big_ufo_destroyer_target; ///< The big UFO that this destroyer is supposed to bomb.
+
+	/* @see in_min/max_height_correction in aircraft.h */
+	bool in_max_height_correction;
+	bool in_min_height_correction;
 
 	/** We don't want GCC to zero our struct! It already is zeroed and has an index! */
 	DisasterVehicle() : SpecializedVehicleBase() {}

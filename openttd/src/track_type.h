@@ -92,6 +92,7 @@ enum Trackdir {
 	TRACKDIR_END,                   ///< Used for iterations
 	INVALID_TRACKDIR  = 0xFF,       ///< Flag for an invalid trackdir
 };
+DECLARE_POSTFIX_INCREMENT(Trackdir);
 
 /** Define basic enum properties */
 template <> struct EnumPropsT<Trackdir> : MakeEnumPropsT<Trackdir, byte, TRACKDIR_BEGIN, TRACKDIR_END, INVALID_TRACKDIR, 4> {};

@@ -2574,13 +2574,13 @@ static ChangeInfoResult GlobalVarChangeInfo(uint gvid, int numinfo, int prop, By
 						for (uint j = 0; j < SNOW_LINE_DAYS; j++) {
 							table[i][j] = buf->ReadByte();
 							if (_cur.grffile->grf_version >= 8) {
-								if (table[i][j] != 0xFF) table[i][j] = table[i][j] * (1 + MAX_TILE_HEIGHT) / 256;
+								if (table[i][j] != 0xFF) table[i][j] = table[i][j] * (1 + _settings_game.construction.max_heightlevel) / 256;
 							} else {
 								if (table[i][j] >= 128) {
 									/* no snow */
 									table[i][j] = 0xFF;
 								} else {
-									table[i][j] = table[i][j] * (1 + MAX_TILE_HEIGHT) / 128;
+									table[i][j] = table[i][j] * (1 + _settings_game.construction.max_heightlevel) / 128;
 								}
 							}
 						}
@@ -3752,6 +3752,9 @@ static ChangeInfoResult IgnoreObjectProperty(uint prop, ByteReader *buf)
 		case 0x0F:
 			buf->ReadDWord();
 			break;
+
+		/* day length factor */
+//		case 0x18: return _settings_game.economy.day_length_factor;
 
 		default:
 			ret = CIR_UNKNOWN;
@@ -5686,8 +5689,11 @@ bool GetGlobalVariable(byte param, uint32 *value, const GRFFile *grffile)
 		/* case 0x14: // Tile refresh offset to right   not implemented */
 		/* case 0x15: // Tile refresh offset upwards    not implemented */
 		/* case 0x16: // Tile refresh offset downwards  not implemented */
-		/* case 0x17: // temperate snow line            not implemented */
-
+		
+		case 0x17: // temperate snow line
+			*value = _settings_game.construction.snow_in_temperate;
+			return true;
+			
 		case 0x1A: // Always -1
 			*value = UINT_MAX;
 			return true;
@@ -5712,12 +5718,22 @@ bool GetGlobalVariable(byte param, uint32 *value, const GRFFile *grffile)
 
 		case 0x20: { // snow line height
 			byte snowline = GetSnowLine();
-			if (_settings_game.game_creation.landscape == LT_ARCTIC && snowline <= MAX_TILE_HEIGHT) {
-				*value = Clamp(snowline * (grffile->grf_version >= 8 ? 1 : TILE_HEIGHT), 0, 0xFE);
-			} else {
-				/* No snow */
-				*value = 0xFF;
-			}
+		    if ( snowline <= _settings_game.construction.max_heightlevel )
+		    {
+                       switch (_settings_game.game_creation.landscape)
+                       {
+                       case LT_ARCTIC:
+                               *value = GetSnowLine();
+                               break;
+                       case LT_TEMPERATE:
+                               if (_settings_game.construction.snow_in_temperate)
+                                       *value = GetSnowLine();
+                               else
+                                       *value = 0xFF;
+                       default:
+                               *value = 0xFF;
+                       };
+		    } else { *value = 0xFF; };
 			return true;
 		}
 
@@ -6369,7 +6385,7 @@ static uint32 GetPatchVariable(uint8 param)
 
 		/* The maximum height of the map. */
 		case 0x14:
-			return MAX_TILE_HEIGHT;
+			return _settings_game.construction.max_heightlevel;
 
 		default:
 			grfmsg(2, "ParamSet: Unknown Patch variable 0x%02X.", param);
@@ -9013,6 +9029,9 @@ static void AfterLoadGRFs()
 
 	InitializeSortedCargoSpecs();
 
+	/* Create dynamic list of cargo legends for smallmap_gui.cpp. */
+	BuildCargoTypesLegend();
+
 	/* Sort the list of industry types. */
 	SortIndustryTypes();
 
@@ -9168,4 +9187,17 @@ void LoadNewGRF(uint load_index, uint file_index)
 	_date_fract   = date_fract;
 	_tick_counter = tick_counter;
 	_display_opt  = display_opt;
+}
+
+/**
+ * Returns amount of user selected NewGRFs files.
+ */
+int CountSelectedGRFs(GRFConfig *grfconf)
+{	
+	int i = 0;
+	
+	/* Find last entry in the list */
+	for (const GRFConfig *list = grfconf; list != NULL; list = list->next , i++) {
+	}
+	return i;
 }
