@@ -4,6 +4,7 @@ bin/ai/*
 !bin/ai/compat*.nut
 !bin/ai/regression
 !bin/data
+!bin/baseset/
 bin/baseset/*
 !bin/baseset/openttd.grf
 !bin/baseset/opntitle.dat
