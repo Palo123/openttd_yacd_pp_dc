@@ -560,7 +560,7 @@ void TransferCargoForTrain(Train *old_veh, Train *new_head, bool part_of_chain)
 			uint amount = min(src->cargo.Count(), dest->cargo_cap - dest->cargo.Count());
 			if (amount <= 0) continue;
 
-			src->cargo.MoveTo(&dest->cargo, amount, VehicleCargoList::MTA_UNLOAD, NULL);
+			src->cargo.Shift(amount, &dest->cargo);
 		}
 	}
 
