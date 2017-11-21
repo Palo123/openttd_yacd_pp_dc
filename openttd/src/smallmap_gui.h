@@ -64,7 +64,8 @@ class SmallMapWindow : public Window {
 	static const uint INDUSTRY_MIN_NUMBER_OF_COLUMNS = 2; ///< Minimal number of columns in the #WID_SM_LEGEND widget for the #SMT_INDUSTRY legend.
 	static const uint FORCE_REFRESH_PERIOD = 0x1F; ///< map is redrawn after that many ticks
 	static const uint BLINK_PERIOD         = 0x0F; ///< highlight blinking interval
-	
+
+	uint min_number_of_columns;    ///< Minimal number of columns in legends.
 	uint min_number_of_fixed_rows; ///< Minimal number of rows in the legends for the fixed layouts only (all except #SMT_INDUSTRY).
 	uint column_width;             ///< Width of a column in the #WID_SM_LEGEND widget.
 
@@ -101,30 +102,7 @@ class SmallMapWindow : public Window {
 		GfxFillRect(x2 - 3, y, x2,    y, PC_VERY_LIGHT_YELLOW);
 	}
 	
-	void DrawMapIndicators() const;
-	void DrawSmallMapColumn(void *dst, uint xc, uint yc, int pitch, int reps, int start_pos, int end_pos, Blitter *blitter) const;
-	void DrawVehicles(const DrawPixelInfo *dpi, Blitter *blitter) const;
-	void DrawTowns(const DrawPixelInfo *dpi) const;
-	void DrawSmallMap(DrawPixelInfo *dpi) const;
-	void DrawRouteLinks() const;
 
-	Point RemapTile(int tile_x, int tile_y) const;
-	Point PixelToTile(int px, int py, int *sub, bool add_sub = true) const;
-	Point ComputeScroll(int tx, int ty, int x, int y, int *sub);
-	void SetZoomLevel(ZoomLevelChange change, const Point *zoom_pt);
-	void SetupWidgetData();
-	uint32 GetTileColours(const TileArea &ta) const;
-
-	int GetPositionOnLegend(Point pt);
-	
-	Point GetSmallMapCoordIncludingHeight(Point viewport_coord) const;
-	
-	
-public:
-
-	uint min_number_of_columns;    ///< Minimal number of columns in legends.
-	
-	SmallMapWindow(const WindowDesc *desc, int window_number);
 	
 	/**
 	 * Compute minimal required width of the legends.
@@ -160,6 +138,30 @@ public:
 	
 	void SwitchMapType(SmallMapType map_type);
 	void SetNewScroll(int sx, int sy, int sub);
+	
+	void DrawMapIndicators() const;
+	void DrawSmallMapColumn(void *dst, uint xc, uint yc, int pitch, int reps, int start_pos, int end_pos, Blitter *blitter) const;
+	void DrawVehicles(const DrawPixelInfo *dpi, Blitter *blitter) const;
+	void DrawTowns(const DrawPixelInfo *dpi) const;
+	void DrawSmallMap(DrawPixelInfo *dpi) const;
+	void DrawRouteLinks() const;
+
+	Point RemapTile(int tile_x, int tile_y) const;
+	Point PixelToTile(int px, int py, int *sub, bool add_sub = true) const;
+	Point ComputeScroll(int tx, int ty, int x, int y, int *sub);
+	void SetZoomLevel(ZoomLevelChange change, const Point *zoom_pt);
+	void SetupWidgetData();
+	uint32 GetTileColours(const TileArea &ta) const;
+
+	int GetPositionOnLegend(Point pt);
+	
+	Point GetSmallMapCoordIncludingHeight(Point viewport_coord) const;
+	
+	
+public:
+	friend class NWidgetSmallmapDisplay;
+	
+	SmallMapWindow(const WindowDesc *desc, int window_number);
 	void SmallMapCenterOnCurrentPos();
 
 	virtual void SetStringParameters(int widget) const;
