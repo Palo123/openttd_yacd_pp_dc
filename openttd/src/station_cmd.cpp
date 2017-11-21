@@ -3599,12 +3599,12 @@ static void UpdateStationRating(Station *st)
 		/* Slowly increase the rating back to his original level in the case we
 		 *  didn't deliver cargo yet to this station. This happens when a bribe
 		 *  failed while you didn't moved that cargo yet to a station. */
-		if (!HasBit(ge->acceptance_pickup, GoodsEntry::GES_PICKUP) && ge->rating < INITIAL_STATION_RATING) {
+		if (!ge->HasRating() && ge->rating < INITIAL_STATION_RATING) {
 			ge->rating++;
 		}
 
 		/* Only change the rating if we are moving this cargo */
-		if (HasBit(ge->acceptance_pickup, GoodsEntry::GES_PICKUP)) {
+		if (ge->HasRating()) {
 			byte_inc_sat(&ge->time_since_pickup);
 
 			bool skip = false;
@@ -4316,7 +4316,7 @@ uint UpdateStationWaiting(Station *st, CargoID type, uint amount, SourceType sou
 
 	ge.cargo.Append(new CargoPacket(st->index, st->xy, amount, source_type, source_id, dest_tile, dest_type, dest_id, next_hop, next_unload, flags));
 
-	if (!HasBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP)) {
+	if (!ge.HasRating()) {
 		InvalidateWindowData(WC_STATION_LIST, st->index);
 		SetBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP);
 	}
