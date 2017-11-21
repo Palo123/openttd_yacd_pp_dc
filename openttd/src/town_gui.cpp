@@ -702,13 +702,32 @@ private:
 		return strnatcmp(buf, buf_cache); // Sort by name (natural sorting).
 	}
 
-	/** Sort by population */
+	/** Sort by population (default descending, as big towns are of the most interest). */
 	static int CDECL TownPopulationSorter(const Town * const *a, const Town * const *b)
 	{
 		uint32 a_population = (*a)->cache.population;
 		uint32 b_population = (*b)->cache.population;
 		if (a_population == b_population) return TownDirectoryWindow::TownNameSorter(a, b);
-		return (a_population < b_population) ? -1 : 1;
+		return (a_population > b_population) ? -1 : 1;
+	}
+
+	/** Sort by town rating */
+	static int CDECL TownRatingSorter(const Town * const *a, const Town * const *b)
+	{
+		int before = TownDirectoryWindow::last_sorting.order ? 1 : -1; // Value to get 'a' before 'b'.
+
+		/* Towns without rating are always after towns with rating. */
+		if (HasBit((*a)->have_ratings, _local_company)) {
+			if (HasBit((*b)->have_ratings, _local_company)) {
+				int16 a_rating = (*a)->ratings[_local_company];
+				int16 b_rating = (*b)->ratings[_local_company];
+				if (a_rating == b_rating) return TownDirectoryWindow::TownNameSorter(a, b);
+				return (a_rating > b_rating) ? -1 : 1;
+			}
+			return before;
+		}
+		if (HasBit((*b)->have_ratings, _local_company)) return -before;
+		return -before * TownDirectoryWindow::TownNameSorter(a, b); // Sort unrated towns always on ascending town name.
 	}
 
 public:
@@ -843,8 +862,16 @@ public:
 	{
 		switch (widget) {
 			case WID_TD_SORT_ORDER: // Click on sort order button
-				this->towns.ToggleSortOrder();
-				this->last_sorting = this->towns.GetListing(); // Store new sorting order.
+				if (this->towns.SortType() != 2) { // A different sort than by rating.
+					this->towns.ToggleSortOrder();
+					this->last_sorting = this->towns.GetListing(); // Store new sorting order.
+				} else {
+					/* Some parts are always sorted ascending on name. */
+					this->last_sorting.order = !this->last_sorting.order;
+					this->towns.SetListing(this->last_sorting);
+					this->towns.ForceResort();
+					this->towns.Sort();
+				}
 				this->SetDirty();
 				break;
 
@@ -919,6 +946,7 @@ const Town *TownDirectoryWindow::last_town = NULL;
 const StringID TownDirectoryWindow::sorter_names[] = {
 	STR_SORT_BY_NAME,
 	STR_SORT_BY_POPULATION,
+	STR_SORT_BY_RATING,
 	INVALID_STRING_ID
 };
 
@@ -926,6 +954,7 @@ const StringID TownDirectoryWindow::sorter_names[] = {
 GUITownList::SortFunction * const TownDirectoryWindow::sorter_funcs[] = {
 	&TownNameSorter,
 	&TownPopulationSorter,
+	&TownRatingSorter,
 };
 
 static const WindowDesc _town_directory_desc(
