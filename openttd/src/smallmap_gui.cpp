@@ -1685,7 +1685,7 @@ void SmallMapWindow::DrawRouteLinks() const
 		bool show = false;
 		for (CargoID cid = 0; cid < NUM_CARGO; cid++) {
 			if (_legend_from_cargoes[_cargotype_to_list_pos[cid]].show_on_map) {
-				total += st->goods[cid].cargo.Count();
+				total += st->goods[cid].cargo.TotalCount();
 				show |= !st->goods[cid].routes.empty();
 			}
 		}

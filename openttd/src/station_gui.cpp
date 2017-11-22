@@ -249,8 +249,8 @@ protected:
 
 		CargoID j;
 		FOR_EACH_SET_CARGO_ID(j, cargo_filter) {
-			if (!(*a)->goods[j].cargo.Empty()) diff += GetTransportedGoodsIncome((*a)->goods[j].cargo.Count(), 20, 50, j);
-			if (!(*b)->goods[j].cargo.Empty()) diff -= GetTransportedGoodsIncome((*b)->goods[j].cargo.Count(), 20, 50, j);
+			if ((*a)->goods[j].cargo.TotalCount() > 0) diff += GetTransportedGoodsIncome((*a)->goods[j].cargo.TotalCount(), 20, 50, j);
+			if ((*b)->goods[j].cargo.TotalCount() > 0) diff -= GetTransportedGoodsIncome((*b)->goods[j].cargo.TotalCount(), 20, 50, j);
 		}
 
 		return ClampToI32(diff);
@@ -425,7 +425,7 @@ public:
 					/* show cargo waiting and station ratings */
 					for (uint j = 0; j < _sorted_standard_cargo_specs_size; j++) {
 						CargoID cid = _sorted_cargo_specs[j]->Index();
-						if (!st->goods[cid].cargo.Empty()) {
+						if (st->goods[cid].cargo.TotalCount() > 0) {
 							/* For RTL we work in exactly the opposite direction. So
 							 * decrement the space needed first, then draw to the left
 							 * instead of drawing to the left and then incrementing
@@ -434,7 +434,7 @@ public:
 								x -= 20;
 								if (x < r.left + WD_FRAMERECT_LEFT) break;
 							}
-							StationsWndShowStationRating(x, x + 16, y, cid, st->goods[cid].cargo.Count(), st->goods[cid].rating);
+							StationsWndShowStationRating(x, x + 16, y, cid, st->goods[cid].cargo.TotalCount(), st->goods[cid].rating);
 							if (!rtl) {
 								x += 20;
 								if (x > r.right - WD_FRAMERECT_RIGHT) break;
@@ -1124,7 +1124,7 @@ struct StationViewWindow : public Window {
 
 		/* count types of cargoes waiting in station */
 		for (CargoID i = 0; i < NUM_CARGO; i++) {
-			if (st->goods[i].cargo.Empty()) {
+			if (st->goods[i].cargo.TotalCount() == 0) {
 				this->cargo_rows[i] = 0;
 			} else {
 				/* Add an entry for total amount of cargo of this type waiting. */
@@ -1189,7 +1189,7 @@ struct StationViewWindow : public Window {
 			}
 
 			/* Remove all entries if no cargo of this type is present. */
-			if (st->goods[cid].cargo.Empty()) {
+			if (st->goods[cid].cargo.TotalCount() == 0) {
 				this->cargo_rows[cid] = 0;
 				list[cid].clear();
 				continue;
@@ -1247,7 +1247,7 @@ struct StationViewWindow : public Window {
 		if (--pos < 0) {
 			StringID str = STR_JUST_NOTHING;
 			for (CargoID i = 0; i < NUM_CARGO; i++) {
-				if (!st->goods[i].cargo.Empty()) str = STR_EMPTY;
+				if (st->goods[i].cargo.TotalCount() > 0) str = STR_EMPTY;
 			}
 			SetDParam(0, str);
 			DrawString(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, y, STR_STATION_VIEW_WAITING_TITLE);
@@ -1357,7 +1357,7 @@ struct StationViewWindow : public Window {
 		if (--pos < 0) {
 			StringID str = STR_JUST_NOTHING;
 			for (CargoID i = 0; i < NUM_CARGO; i++) {
-				if (!st->goods[i].cargo.Empty()) str = STR_EMPTY;
+				if (st->goods[i].cargo.TotalCount() > 0) str = STR_EMPTY;
 			}
 			SetDParam(0, str);
 			DrawString(r.left + WD_FRAMERECT_LEFT, r.right - WD_FRAMERECT_RIGHT, y, STR_STATION_VIEW_WAITING_TITLE);
@@ -1375,13 +1375,13 @@ struct StationViewWindow : public Window {
 
 		int maxrows = this->vscroll->GetCapacity();
 		for (CargoID cid = 0; cid < NUM_CARGO && pos > -maxrows; cid++) {
-			if (st->goods[cid].cargo.Empty()) continue;
+			if (st->goods[cid].cargo.TotalCount() == 0) continue;
 
 			if (--pos < 0) {
 				/* Draw heading. */
-				DrawCargoIcons(cid, st->goods[cid].cargo.Count(), r.left + WD_FRAMETEXT_LEFT, r.right - WD_FRAMERECT_RIGHT, y);
+				DrawCargoIcons(cid, st->goods[cid].cargo.TotalCount(), r.left + WD_FRAMETEXT_LEFT, r.right - WD_FRAMERECT_RIGHT, y);
 				SetDParam(0, cid);
-				SetDParam(1, st->goods[cid].cargo.Count());
+				SetDParam(1, st->goods[cid].cargo.TotalCount());
 				DrawString(text_left, text_right, y, STR_STATION_VIEW_WAITING_CARGO, TC_FROMSTRING, SA_RIGHT);
 				if (!list[cid].empty()) {
 					DrawString(shrink_left, shrink_right, y, HasBit(this->cargo, cid) ? "-" : "+", TC_YELLOW, SA_RIGHT);

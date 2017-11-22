@@ -1944,7 +1944,7 @@ struct VehicleDetailsWindow : Window {
                 CargoArray max_cargo;
                 CargoDestSummary dests[NUM_CARGO];
                 for (const Vehicle *u = v; u != NULL; u = u->Next()) {
-                        act_cargo[u->cargo_type] += u->cargo.Count();
+                        act_cargo[u->cargo_type] += u->cargo.StoredCount();
                         max_cargo[u->cargo_type] += u->cargo_cap;
                         AddVehicleCargoDestSummary(u, &dests[u->cargo_type]);
                 }

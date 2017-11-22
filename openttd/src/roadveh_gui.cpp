@@ -82,13 +82,13 @@ void DrawRoadVehDetails(const Vehicle *v, int left, int right, int y)
 			if (u->cargo_cap == 0) continue;
 
 			str = STR_VEHICLE_DETAILS_CARGO_EMPTY;
-			if (!u->cargo.Empty()) {
+			if (u->cargo.StoredCount() > 0) {
 				SetDParam(0, u->cargo_type);
-				SetDParam(1, u->cargo.Count());
+				SetDParam(1, u->cargo.StoredCount());
 				SetDParam(2, u->cargo.Source());
 				str = STR_VEHICLE_DETAILS_CARGO_FROM;
 				feeder_share += u->cargo.FeederShare();
-                                act_cargo[u->cargo_type] += u->cargo.Count();
+                                act_cargo[u->cargo_type] += u->cargo.StoredCount();
                                 AddVehicleCargoDestSummary(u, &dests[u->cargo_type]);
 			}
 			DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, str);

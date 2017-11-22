@@ -53,7 +53,7 @@ void DrawAircraftDetails(const Aircraft *v, int left, int right, int y)
 		}
 
 		if (u->cargo_cap != 0) {
-			uint cargo_count = u->cargo.Count();
+			uint cargo_count = u->cargo.StoredCount();
 
 			y_offset += FONT_HEIGHT_NORMAL + 1;
 			if (cargo_count != 0) {
@@ -63,7 +63,7 @@ void DrawAircraftDetails(const Aircraft *v, int left, int right, int y)
 				SetDParam(2, u->cargo.Source());
 				DrawString(left, right, y + 2 * FONT_HEIGHT_NORMAL + 1 + y_offset, STR_VEHICLE_DETAILS_CARGO_FROM);
 				feeder_share += u->cargo.FeederShare();
-                                act_cargo[u->cargo_type] += u->cargo.Count();
+                                act_cargo[u->cargo_type] += u->cargo.StoredCount();
                                 AddVehicleCargoDestSummary(u, &dests[u->cargo_type]);
 			}
 		}
