@@ -198,17 +198,17 @@ struct TimetableWindow : Window {
        TTSepSettings new_sep_settings;       ///< Contains new separation settings.
        VehicleTimetableWidgets query_widget; ///< Required to determinate source of input query
 
-	TimetableWindow(const WindowDesc *desc, WindowNumber window_number) :
-			Window(),
+	TimetableWindow(WindowDesc *desc, WindowNumber window_number) :
+			Window(desc),
 			sel_index(-1),
 			vehicle(Vehicle::Get(window_number)),
 			show_expected(true)
 	{
                this->new_sep_settings = (vehicle->orders.list != NULL) ? vehicle->orders.list->GetSepSettings() : TTSepSettings();
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 		this->vscroll = this->GetScrollbar(WID_VT_SCROLLBAR);
 		this->UpdateSelectionStates();
-		this->FinishInitNested(desc, window_number);
+		this->FinishInitNested(window_number);
 
 		this->owner = this->vehicle->owner;
 	}
@@ -962,7 +962,7 @@ static const NWidgetPart _nested_timetable_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _timetable_desc(
+static WindowDesc _timetable_desc(
 	WDP_AUTO, 400, 130,
 	WC_VEHICLE_TIMETABLE, WC_VEHICLE_VIEW,
 	WDF_CONSTRUCTION,

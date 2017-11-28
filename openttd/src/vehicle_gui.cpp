@@ -572,14 +572,14 @@ struct RefitWindow : public Window {
 		return &l[this->sel[1]];
 	}
 
-	RefitWindow(const WindowDesc *desc, const Vehicle *v, VehicleOrderID order, bool auto_refit, bool is_virtual) : Window()
+	RefitWindow(WindowDesc *desc, const Vehicle *v, VehicleOrderID order, bool auto_refit, bool is_virtual) : Window(desc)
 	{
 		this->sel[0] = -1;
 		this->sel[1] = 0;
 		this->auto_refit = auto_refit;
 		this->order = order;
 		this->is_virtual_train = is_virtual;
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 
 		this->vscroll = this->GetScrollbar(WID_VR_SCROLLBAR);
 		this->hscroll = (v->IsGroundVehicle() ? this->GetScrollbar(WID_VR_HSCROLLBAR) : NULL);
@@ -591,7 +591,7 @@ struct RefitWindow : public Window {
 		this->GetWidget<NWidgetStacked>(WID_VR_SHOW_HSCROLLBAR)->SetDisplayedPlane(v->IsGroundVehicle() ? 0 : SZSP_HORIZONTAL);
 		this->GetWidget<NWidgetCore>(WID_VR_VEHICLE_PANEL_DISPLAY)->tool_tip = (v->type == VEH_TRAIN) ? STR_REFIT_SELECT_VEHICLES_TOOLTIP : STR_NULL;
 
-		this->FinishInitNested(desc, v->index);
+		this->FinishInitNested(v->index);
 		this->owner = v->owner;
 
 		this->SetWidgetDisabledState(WID_VR_REFIT, this->sel[0] < 0);
@@ -1032,7 +1032,7 @@ static const NWidgetPart _nested_vehicle_refit_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _vehicle_refit_desc(
+static WindowDesc _vehicle_refit_desc(
 	WDP_AUTO, 240, 174,
 	WC_VEHICLE_REFIT, WC_VEHICLE_VIEW,
 	WDF_CONSTRUCTION,
@@ -1454,7 +1454,7 @@ private:
 	};
 
 public:
-	VehicleListWindow(const WindowDesc *desc, WindowNumber window_number) : BaseVehicleListWindow(window_number)
+	VehicleListWindow(WindowDesc *desc, WindowNumber window_number) : BaseVehicleListWindow(desc, window_number)
 	{
 		/* Set up sorting. Make the window-specific _sorting variable
 		 * point to the correct global _sorting struct so we are freed
@@ -1467,7 +1467,7 @@ public:
 			default: NOT_REACHED();
 		}
 
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 
 		this->vscroll = this->GetScrollbar(WID_VL_SCROLLBAR);
 
@@ -1486,7 +1486,7 @@ public:
 			this->GetWidget<NWidgetCore>(WID_VL_CAPTION)->widget_data = STR_VEHICLE_LIST_TRAIN_CAPTION + this->vli.vtype;
 		}
 
-		this->FinishInitNested(desc, window_number);
+		this->FinishInitNested(window_number);
 		if (this->vli.company != OWNER_NONE) this->owner = this->vli.company;
 
 		if (this->vli.vtype == VEH_TRAIN) ResizeWindow(this, 65, 0);
@@ -1871,13 +1871,13 @@ struct VehicleDetailsWindow : Window {
 	uint info_height;
 
 	/** Initialize a newly created vehicle details window */
-	VehicleDetailsWindow(const WindowDesc *desc, WindowNumber window_number) : Window()
+	VehicleDetailsWindow(WindowDesc *desc, WindowNumber window_number) : Window(desc)
 	{
 		const Vehicle *v = Vehicle::Get(window_number);
 
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 		this->vscroll = (v->type == VEH_TRAIN ? this->GetScrollbar(WID_VD_SCROLLBAR) : NULL);
-		this->FinishInitNested(desc, window_number);
+		this->FinishInitNested(window_number);
 
 		this->GetWidget<NWidgetCore>(WID_VD_RENAME_VEHICLE)->tool_tip = STR_VEHICLE_DETAILS_TRAIN_RENAME + v->type;
 
@@ -2309,7 +2309,7 @@ struct VehicleDetailsWindow : Window {
 };
 
 /** Vehicle details window descriptor. */
-static const WindowDesc _train_vehicle_details_desc(
+static WindowDesc _train_vehicle_details_desc(
 	WDP_AUTO, 405, 178,
 	WC_VEHICLE_DETAILS, WC_VEHICLE_VIEW,
 	0,
@@ -2317,7 +2317,7 @@ static const WindowDesc _train_vehicle_details_desc(
 );
 
 /** Vehicle details window descriptor for other vehicles than a train. */
-static const WindowDesc _nontrain_vehicle_details_desc(
+static WindowDesc _nontrain_vehicle_details_desc(
 	WDP_AUTO, 405, 113,
 	WC_VEHICLE_DETAILS, WC_VEHICLE_VIEW,
 	0,
@@ -2376,7 +2376,7 @@ static const NWidgetPart _nested_vehicle_view_widgets[] = {
 };
 
 /** Vehicle view window descriptor for all vehicles but trains. */
-static const WindowDesc _vehicle_view_desc(
+static WindowDesc _vehicle_view_desc(
 	WDP_AUTO, 250, 116,
 	WC_VEHICLE_VIEW, WC_NONE,
 	0,
@@ -2387,7 +2387,7 @@ static const WindowDesc _vehicle_view_desc(
  * Vehicle view window descriptor for trains. Only minimum_height and
  *  default_height are different for train view.
  */
-static const WindowDesc _train_view_desc(
+static WindowDesc _train_view_desc(
 	WDP_AUTO, 250, 134,
 	WC_VEHICLE_VIEW, WC_NONE,
 	0,
@@ -2524,9 +2524,9 @@ private:
 	}
 
 public:
-	VehicleViewWindow(const WindowDesc *desc, WindowNumber window_number) : Window()
+	VehicleViewWindow(WindowDesc *desc, WindowNumber window_number) : Window(desc)
 	{
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 
 		/* Sprites for the 'send to depot' button indexed by vehicle type. */
 		static const SpriteID vehicle_view_goto_depot_sprites[] = {
@@ -2562,7 +2562,7 @@ public:
 
 			default: NOT_REACHED();
 		}
-		this->FinishInitNested(desc, window_number);
+		this->FinishInitNested(window_number);
 		this->owner = v->owner;
 		this->GetWidget<NWidgetViewport>(WID_VV_VIEWPORT)->InitializeViewport(this, this->window_number | (1 << 31), _vehicle_view_zoom_levels[v->type]);
 

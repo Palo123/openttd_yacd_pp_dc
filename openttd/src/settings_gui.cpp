@@ -160,12 +160,12 @@ struct GameOptionsWindow : Window {
 	GameSettings *opt;
 	bool reload;
 
-	GameOptionsWindow(const WindowDesc *desc) : Window()
+	GameOptionsWindow(WindowDesc *desc) : Window(desc)
 	{
 		this->opt = &GetGameSettings();
 		this->reload = false;
 
-		this->InitNested(desc, WN_GAME_OPTIONS_GAME_OPTIONS);
+		this->InitNested(WN_GAME_OPTIONS_GAME_OPTIONS);
 		this->OnInvalidateData(0);
 	}
 
@@ -661,7 +661,7 @@ static const NWidgetPart _nested_game_options_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _game_options_desc(
+static WindowDesc _game_options_desc(
 	WDP_CENTER, 0, 0,
 	WC_GAME_OPTIONS, WC_NONE,
 	0,
@@ -1849,7 +1849,7 @@ struct GameSettingsWindow : Window {
 
 	Scrollbar *vscroll;
 
-	GameSettingsWindow(const WindowDesc *desc) : filter_editbox(50)
+	GameSettingsWindow(WindowDesc *desc) : Window(desc), filter_editbox(50)
 	{
 		static bool first_time = true;
 
@@ -1872,9 +1872,9 @@ struct GameSettingsWindow : Window {
 		this->closing_dropdown = false;
 		this->manually_changed_folding = false;
 
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 		this->vscroll = this->GetScrollbar(WID_GS_SCROLLBAR);
-		this->FinishInitNested(desc, WN_GAME_OPTIONS_GAME_SETTINGS);
+		this->FinishInitNested(WN_GAME_OPTIONS_GAME_SETTINGS);
 
 		this->querystrings[WID_GS_FILTER] = &this->filter_editbox;
 		this->filter_editbox.cancel_button = QueryString::ACTION_CLEAR;
@@ -2377,7 +2377,7 @@ static const NWidgetPart _nested_settings_selection_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _settings_selection_desc(
+static WindowDesc _settings_selection_desc(
 	WDP_CENTER, 510, 450,
 	WC_GAME_OPTIONS, WC_NONE,
 	0,
@@ -2458,9 +2458,9 @@ void DrawBoolButton(int x, int y, bool state, bool clickable)
 struct CustomCurrencyWindow : Window {
 	int query_widget;
 
-	CustomCurrencyWindow(const WindowDesc *desc) : Window()
+	CustomCurrencyWindow(WindowDesc *desc) : Window(desc)
 	{
-		this->InitNested(desc);
+		this->InitNested();
 
 		SetButtonState();
 	}
@@ -2670,7 +2670,7 @@ static const NWidgetPart _nested_cust_currency_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _cust_currency_desc(
+static WindowDesc _cust_currency_desc(
 	WDP_CENTER, 0, 0,
 	WC_CUSTOM_CURRENCY, WC_NONE,
 	0,

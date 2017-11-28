@@ -39,22 +39,22 @@ struct SetDateWindow : Window {
 	 * @param max_year the maximum year (inclusive) to show in the year dropdown
 	 * @param callback the callback to call once a date has been selected
 	 */
-	SetDateWindow(const WindowDesc *desc, WindowNumber window_number, Window *parent, Date initial_date, Year min_year, Year max_year, SetDateCallback *callback) :
-			Window(),
+	SetDateWindow(WindowDesc *desc, WindowNumber window_number, Window *parent, Date initial_date, Year min_year, Year max_year, SetDateCallback *callback) :
+			Window(desc),
 			callback(callback),
 			min_year(max(MIN_YEAR, min_year)),
 			max_year(min(MAX_YEAR, max_year))
 	{
 		assert(this->min_year <= this->max_year);
 		this->parent = parent;
-		this->InitNested(desc, window_number);
+		this->InitNested(window_number);
 
 		if (initial_date == 0) initial_date = _date;
 		ConvertDateToYMD(initial_date, &this->date);
 		this->date.year = Clamp(this->date.year, min_year, max_year);
 	}
 
-	virtual Point OnInitialPosition(const WindowDesc *desc, int16 sm_width, int16 sm_height, int window_number)
+	virtual Point OnInitialPosition(int16 sm_width, int16 sm_height, int window_number)
 	{
 		Point pt = { this->parent->left + this->parent->width / 2 - sm_width / 2, this->parent->top + this->parent->height / 2 - sm_height / 2 };
 		return pt;
@@ -176,7 +176,7 @@ struct SetMinutesWindow : SetDateWindow
 	Minutes minutes;
 
 	/** Constructor. */
-	SetMinutesWindow(const WindowDesc *desc, WindowNumber window_number, Window *parent, DateTicks initial_date, Year min_year, Year max_year, SetDateCallback *callback) :
+	SetMinutesWindow(WindowDesc *desc, WindowNumber window_number, Window *parent, DateTicks initial_date, Year min_year, Year max_year, SetDateCallback *callback) :
 		SetDateWindow(desc, window_number, parent, initial_date, min_year, max_year, callback),
 		minutes(initial_date / _settings_client.gui.ticks_per_minute)
 	{
@@ -330,14 +330,14 @@ static const NWidgetPart _nested_set_minutes_widgets[] = {
 };
 
 /** Description of the date setting window. */
-static const WindowDesc _set_date_desc(
+static WindowDesc _set_date_desc(
 	WDP_CENTER, 0, 0,
 	WC_SET_DATE, WC_NONE,
 	0,
 	_nested_set_date_widgets, lengthof(_nested_set_date_widgets)
 );
 
-static const WindowDesc _set_minutes_desc(
+static WindowDesc _set_minutes_desc(
 	WDP_CENTER, 0, 0,
 	WC_SET_DATE, WC_NONE,
 	0,

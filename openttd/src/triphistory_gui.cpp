@@ -59,14 +59,13 @@ struct VehicleTripHistoryWindow : Window {
 private:
 	uint8 valid_rows; // number of rows in trip history
 public:
-//	VehicleTripHistoryWindow(WindowDesc *desc, WindowNumber window_number) :
-	VehicleTripHistoryWindow(const WindowDesc *desc, WindowNumber window_number) :
-		Window(), valid_rows( 0 )
+	VehicleTripHistoryWindow(WindowDesc *desc, WindowNumber window_number) :
+		Window(desc), valid_rows( 0 )
 	{
 		const Vehicle *v = Vehicle::Get(window_number);
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 		
-		this->FinishInitNested(desc,window_number);
+		this->FinishInitNested(window_number);
 		this->owner = v->owner;
 		InvalidateData();
 	}

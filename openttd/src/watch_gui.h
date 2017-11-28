@@ -43,7 +43,7 @@ protected:
 
 public:
 
-	WatchCompany(const WindowDesc *desc, int window_number, CompanyID company_to_watch );
+	WatchCompany(WindowDesc *desc, int window_number, CompanyID company_to_watch );
 
 	virtual void SetStringParameters(int widget) const;
 	virtual void OnPaint( );

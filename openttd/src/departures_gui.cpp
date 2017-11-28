@@ -97,7 +97,7 @@ protected:
 	void DeleteDeparturesList(DepartureList* list);
 public:
 
-	DeparturesWindow(const WindowDesc *desc, WindowNumber window_number) : Window(),
+	DeparturesWindow(WindowDesc *desc, WindowNumber window_number) : Window(desc),
 		station(window_number),
 		departures(new DepartureList()),
 		arrivals(new DepartureList()),
@@ -106,9 +106,9 @@ public:
 		calc_tick_countdown(0),
 		min_width(400)
 	{
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 		this->vscroll = this->GetScrollbar(WID_DB_SCROLLBAR);
-		this->FinishInitNested(desc, window_number);
+		this->FinishInitNested(window_number);
 
 		/* By default, only show departures. */
 		departure_types[0] = true;

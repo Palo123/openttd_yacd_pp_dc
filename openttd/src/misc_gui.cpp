@@ -48,7 +48,7 @@ static const NWidgetPart _nested_land_info_widgets[] = {
 	NWidget(WWT_PANEL, COLOUR_GREY, WID_LI_BACKGROUND), EndContainer(),
 };
 
-static const WindowDesc _land_info_desc(
+static WindowDesc _land_info_desc(
 	WDP_AUTO, 0, 0,
 	WC_LAND_INFO, WC_NONE,
 	0,
@@ -110,9 +110,9 @@ public:
 		}
 	}
 
-	LandInfoWindow(TileIndex tile) : Window(), tile(tile)
+	LandInfoWindow(TileIndex tile) : Window(&_land_info_desc), tile(tile)
 	{
-		this->InitNested(&_land_info_desc);
+		this->InitNested();
 
 #if defined(_DEBUG)
 #	define LANDINFOD_LEVEL 0
@@ -366,7 +366,7 @@ static const NWidgetPart _nested_about_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _about_desc(
+static WindowDesc _about_desc(
 	WDP_CENTER, 0, 0,
 	WC_GAME_OPTIONS, WC_NONE,
 	0,
@@ -441,9 +441,9 @@ struct AboutWindow : public Window {
 	int line_height;                         ///< The height of a single line
 	static const int num_visible_lines = 19; ///< The number of lines visible simultaneously
 
-	AboutWindow() : Window()
+	AboutWindow() : Window(&_about_desc)
 	{
-		this->InitNested(&_about_desc, WN_GAME_OPTIONS_ABOUT);
+		this->InitNested(WN_GAME_OPTIONS_ABOUT);
 
 		this->counter = 5;
 		this->text_position = this->GetWidget<NWidgetBase>(WID_A_SCROLLING_TEXT)->pos_y + this->GetWidget<NWidgetBase>(WID_A_SCROLLING_TEXT)->current_y;
@@ -617,7 +617,7 @@ static const NWidgetPart _nested_tooltips_widgets[] = {
 	NWidget(WWT_PANEL, COLOUR_GREY, WID_TT_BACKGROUND), SetMinimalSize(200, 32), EndContainer(),
 };
 
-static const WindowDesc _tool_tips_desc(
+static WindowDesc _tool_tips_desc(
 	WDP_MANUAL, 0, 0, // Coordinates and sizes are not used,
 	WC_TOOLTIPS, WC_NONE,
 	0,
@@ -633,7 +633,7 @@ struct TooltipsWindow : public Window
 	TooltipCloseCondition close_cond; ///< Condition for closing the window.
        char buffer[DRAW_STRING_BUFFER];  ///< Text to draw
 
-	TooltipsWindow(Window *parent, StringID str, uint paramcount, const uint64 params[], TooltipCloseCondition close_tooltip) : Window()
+	TooltipsWindow(Window *parent, StringID str, uint paramcount, const uint64 params[], TooltipCloseCondition close_tooltip) : Window(&_tool_tips_desc)
 	{
 		this->parent = parent;
 		this->string_id = str;
@@ -644,12 +644,12 @@ struct TooltipsWindow : public Window
 		this->paramcount = paramcount;
 		this->close_cond = close_tooltip;
 
-		this->InitNested(&_tool_tips_desc);
+		this->InitNested();
 
 		CLRBITS(this->flags, WF_WHITE_BORDER);
 	}
 
-	virtual Point OnInitialPosition(const WindowDesc *desc, int16 sm_width, int16 sm_height, int window_number)
+	virtual Point OnInitialPosition(int16 sm_width, int16 sm_height, int window_number)
 	{
 		/* Find the free screen space between the main toolbar at the top, and the statusbar at the bottom.
 		 * Add a fixed distance 2 so the tooltip floats free from both bars.
@@ -928,8 +928,8 @@ struct QueryStringWindow : public Window
 	QueryString editbox;    ///< Editbox.
 	QueryStringFlags flags; ///< Flags controlling behaviour of the window.
 
-	QueryStringWindow(StringID str, StringID caption, uint max_bytes, uint max_chars, const WindowDesc *desc, Window *parent, CharSetFilter afilter, QueryStringFlags flags) :
-			editbox(max_bytes, max_chars)
+	QueryStringWindow(StringID str, StringID caption, uint max_bytes, uint max_chars, WindowDesc *desc, Window *parent, CharSetFilter afilter, QueryStringFlags flags) :
+			Window(desc), editbox(max_bytes, max_chars)
 	{
 		char *last_of = &this->editbox.text.buf[this->editbox.text.max_bytes - 1];
 		GetString(this->editbox.text.buf, str, last_of);
@@ -952,7 +952,7 @@ struct QueryStringWindow : public Window
 		this->editbox.text.afilter = afilter;
 		this->flags = flags;
 
-		this->InitNested(desc, WN_QUERY_STRING);
+		this->InitNested(WN_QUERY_STRING);
 
 		this->parent = parent;
 
@@ -1028,7 +1028,7 @@ static const NWidgetPart _nested_query_string_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _query_string_desc(
+static WindowDesc _query_string_desc(
 	WDP_CENTER, 0, 0,
 	WC_QUERY_STRING, WC_NONE,
 	0,
@@ -1060,7 +1060,7 @@ struct QueryWindow : public Window {
 	StringID message;        ///< message shown for query window
 	StringID caption;        ///< title of window
 
-	QueryWindow(const WindowDesc *desc, StringID caption, StringID message, Window *parent, QueryCallbackProc *callback) : Window()
+	QueryWindow(WindowDesc *desc, StringID caption, StringID message, Window *parent, QueryCallbackProc *callback) : Window(desc)
 	{
 		/* Create a backup of the variadic arguments to strings because it will be
 		 * overridden pretty often. We will copy these back for drawing */
@@ -1069,7 +1069,7 @@ struct QueryWindow : public Window {
 		this->message = message;
 		this->proc    = callback;
 
-		this->InitNested(desc, WN_CONFIRM_POPUP_QUERY);
+		this->InitNested(WN_CONFIRM_POPUP_QUERY);
 
 		this->parent = parent;
 		this->left = parent->left + (parent->width / 2) - (this->width / 2);
@@ -1169,7 +1169,7 @@ static const NWidgetPart _nested_query_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _query_desc(
+static WindowDesc _query_desc(
 	WDP_CENTER, 0, 0,
 	WC_CONFIRM_POPUP_QUERY, WC_NONE,
 	WDF_MODAL,

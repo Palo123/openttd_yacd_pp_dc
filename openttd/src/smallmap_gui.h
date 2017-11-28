@@ -161,7 +161,7 @@ class SmallMapWindow : public Window {
 public:
 	friend class NWidgetSmallmapDisplay;
 	
-	SmallMapWindow(const WindowDesc *desc, int window_number);
+	SmallMapWindow(WindowDesc *desc, int window_number);
 	void SmallMapCenterOnCurrentPos();
 
 	virtual void SetStringParameters(int widget) const;

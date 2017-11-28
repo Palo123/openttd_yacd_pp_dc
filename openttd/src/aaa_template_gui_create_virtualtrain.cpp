@@ -440,7 +440,7 @@ struct BuildVirtualTrainWindow : Window {
 	Train **virtual_train;
 	bool *noticeParent;
 
-	BuildVirtualTrainWindow(const WindowDesc *desc, Train **vt, bool *notice) : Window()
+	BuildVirtualTrainWindow(WindowDesc *desc, Train **vt, bool *notice) : Window(desc)
 	{
 		this->vehicle_type = VEH_TRAIN; // TODO change type to VEH_TRAIN everywhere
 		this->window_number = 0;//tile == INVALID_TILE ? (int)type : tile;
@@ -454,7 +454,7 @@ struct BuildVirtualTrainWindow : Window {
 
 		this->listview_mode = (this->window_number <= VEH_END);
 
-		this->CreateNestedTree(desc);
+		this->CreateNestedTree();
 
 		this->vscroll = this->GetScrollbar(WID_BV_SCROLLBAR);
 
@@ -468,7 +468,7 @@ struct BuildVirtualTrainWindow : Window {
 
 		this->details_height = ((this->vehicle_type == VEH_TRAIN) ? 10 : 9) * FONT_HEIGHT_NORMAL + WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM;
 
-		this->FinishInitNested(desc, VEH_TRAIN);
+		this->FinishInitNested(VEH_TRAIN);
 
 		this->owner = _local_company;
 
@@ -821,7 +821,7 @@ struct BuildVirtualTrainWindow : Window {
 	}
 };
 
-static const WindowDesc _build_vehicle_desc(
+static WindowDesc _build_vehicle_desc(
 	WDP_AUTO, 240, 268,
 	WC_BUILD_VIRTUAL_TRAIN, WC_NONE,
 	WDF_CONSTRUCTION,

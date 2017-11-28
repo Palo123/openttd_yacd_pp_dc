@@ -164,7 +164,7 @@ static const NWidgetPart _widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _replace_rail_vehicle_desc(
+static WindowDesc _replace_rail_vehicle_desc(
 	WDP_AUTO, 456, 156,
 	WC_TEMPLATEGUI_MAIN, WC_NONE,					// TODO change wc_replace_vehicle
 	WDF_CONSTRUCTION,
@@ -195,7 +195,7 @@ private:
 	bool editInProgress;
 
 public:
-	TemplateReplaceWindow(const WindowDesc *wdesc, byte dig, int step_h) : Window()
+	TemplateReplaceWindow(WindowDesc *wdesc, byte dig, int step_h) : Window(wdesc)
 	{
 		// listing/sorting
 		templates.SetSortFuncs(this->template_sorter_funcs);
@@ -209,12 +209,12 @@ public:
 
 		this->line_height = step_h;
 
-		this->CreateNestedTree(wdesc);
+		this->CreateNestedTree();
 		this->vscroll[0] = this->GetScrollbar(TRW_WIDGET_TOP_SCROLLBAR);
 		this->vscroll[1] = this->GetScrollbar(TRW_WIDGET_BOTTOM_SCROLLBAR);
 		this->vscroll[0]->SetStepSize(step_h / 2);
 		this->vscroll[1]->SetStepSize(step_h);
-		this->FinishInitNested(wdesc, VEH_TRAIN);
+		this->FinishInitNested(VEH_TRAIN);
 
 		this->owner = _local_company;
 

@@ -103,7 +103,7 @@ static const NWidgetPart widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _template_replace_replaceall_desc(
+static WindowDesc _template_replace_replaceall_desc(
 	WDP_AUTO, 400, 200,
 	WC_TEMPLATEGUI_RPLALL, WC_NONE,
 	WDF_CONSTRUCTION,
@@ -140,10 +140,10 @@ private:
 	VirtTrainList *virtualTrains;
 
 public:
-	TemplateReplacementReplaceAllWindow(const WindowDesc *wdesc) : Window()
+	TemplateReplacementReplaceAllWindow(WindowDesc *wdesc) : Window(wdesc)
 	{
 
-		this->CreateNestedTree(wdesc);
+		this->CreateNestedTree();
 
 		this->vscroll_tl = this->GetScrollbar(RPLALL_GUI_SCROLL_TL);
 		this->vscroll_tr = this->GetScrollbar(RPLALL_GUI_SCROLL_TR);
@@ -152,7 +152,7 @@ public:
 		this->vscroll_tr->SetStepSize(16);
 		this->vscroll_bo->SetStepSize(16);
 
-		this->FinishInitNested(wdesc, VEH_TRAIN);
+		this->FinishInitNested(VEH_TRAIN);
 
 		this->owner = _local_company;
 

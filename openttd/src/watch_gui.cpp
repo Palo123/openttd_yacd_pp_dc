@@ -137,7 +137,7 @@ static const NWidgetPart _nested_watch_company_widgets[] = {
 /**
  * Watch Company Window Descriptor
  */
-static const WindowDesc _watch_company_desc(
+static WindowDesc _watch_company_desc(
 	WDP_AUTO, 300, 257,
 	WC_WATCH_COMPANY, WC_NONE,
 	0,
@@ -151,11 +151,11 @@ static const WindowDesc _watch_company_desc(
  * @param window_number The window number for the class
  * @param company_to_watch Company ID for watching a particular company
  */
-WatchCompany::WatchCompany(const WindowDesc *desc, int window_number, CompanyID company_to_watch = INVALID_COMPANY ) : Window( )
+WatchCompany::WatchCompany(WindowDesc *desc, int window_number, CompanyID company_to_watch = INVALID_COMPANY ) : Window(desc)
 {
 	this->watched_company = company_to_watch;
 
-	this->InitNested(desc, window_number);
+	this->InitNested(window_number);
 	this->owner = this->watched_company;
 
 	/* Reset activity and client count for all companies */

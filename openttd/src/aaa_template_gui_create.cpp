@@ -85,7 +85,7 @@ static const NWidgetPart _widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _template_create_window_desc(
+static WindowDesc _template_create_window_desc(
 	WDP_AUTO, 456, 100,
 	WC_CREATE_TEMPLATE, WC_NONE,					// TODO change wc_replace_vehicle
 	WDF_CONSTRUCTION,
@@ -124,12 +124,12 @@ private:
 	TemplateVehicle *editTemplate;
 
 public:
-	TemplateCreateWindow(const WindowDesc* _wdesc, TemplateVehicle *to_edit, bool *notice, bool *windowOpen, int step_h) : Window()
+	TemplateCreateWindow(WindowDesc* _wdesc, TemplateVehicle *to_edit, bool *notice, bool *windowOpen, int step_h) : Window(_wdesc)
 	{
 		this->line_height = step_h;
-		this->CreateNestedTree(_wdesc);
+		this->CreateNestedTree();
 		this->hscroll = this->GetScrollbar(TCW_SCROLLBAR_NEW_TMPL);
-		this->FinishInitNested(_wdesc, VEH_TRAIN);
+		this->FinishInitNested(VEH_TRAIN);
 		/* a sprite */
 		this->GetWidget<NWidgetCore>(TCW_SELL_TMPL)->widget_data = SPR_SELL_TRAIN;
 

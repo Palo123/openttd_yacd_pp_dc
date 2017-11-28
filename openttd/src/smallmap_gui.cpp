@@ -1875,10 +1875,10 @@ void SmallMapWindow::SetupWidgetData()
 	this->GetWidget<NWidgetStacked>(WID_SM_SELECT_BUTTONS)->SetDisplayedPlane(plane);
 }
 
-SmallMapWindow::SmallMapWindow(const WindowDesc *desc, int window_number) : Window(), refresh(FORCE_REFRESH_PERIOD)
+SmallMapWindow::SmallMapWindow(WindowDesc *desc, int window_number) : Window(desc), refresh(FORCE_REFRESH_PERIOD)
 {
 	_smallmap_industry_highlight = INVALID_INDUSTRYTYPE;
-	this->InitNested(desc, window_number);
+	this->InitNested(window_number);
 	this->LowerWidget(this->map_type + WID_SM_CONTOUR);
 
 	BuildLandLegend();
@@ -2582,7 +2582,7 @@ static const NWidgetPart _nested_smallmap_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _smallmap_desc(
+static WindowDesc _smallmap_desc(
 	WDP_AUTO, 446, 314,
 	WC_SMALLMAP, WC_NONE,
 	0,

@@ -199,9 +199,9 @@ struct ClipboardToolbarWindow : Window {
 		return CPM_NONE;
 	}
 
-	ClipboardToolbarWindow(const WindowDesc *desc) : Window()
+	ClipboardToolbarWindow(WindowDesc *desc) : Window(desc)
 	{
-		this->InitNested(desc);
+		this->InitNested();
 
 		if (!IsClipboardBufferOn()) {
 			NWidgetCore *button = this->GetWidget<NWidgetCore>(WID_CT_COPY);
@@ -731,7 +731,7 @@ static const NWidgetPart _nested_clipboard_toolbar_widgets[] = {
 	EndContainer(),
 };
 
-static const WindowDesc _clipboard_toolbar_desc(
+static WindowDesc _clipboard_toolbar_desc(
        WDP_ALIGN_TOOLBAR, 0, 0,
 	WC_BUILD_TOOLBAR, WC_NONE,
 	WDF_CONSTRUCTION,
