@@ -331,14 +331,14 @@ static const NWidgetPart _nested_set_minutes_widgets[] = {
 
 /** Description of the date setting window. */
 static WindowDesc _set_date_desc(
-	WDP_CENTER, 0, 0,
+	WDP_CENTER, NULL, 0, 0,
 	WC_SET_DATE, WC_NONE,
 	0,
 	_nested_set_date_widgets, lengthof(_nested_set_date_widgets)
 );
 
 static WindowDesc _set_minutes_desc(
-	WDP_CENTER, 0, 0,
+	WDP_CENTER, NULL, 0, 0,
 	WC_SET_DATE, WC_NONE,
 	0,
 	_nested_set_minutes_widgets, lengthof(_nested_set_minutes_widgets)

@@ -197,7 +197,7 @@ public:
 };
 
 static WindowDesc _vehicle_trip_history(
-	WDP_AUTO, 380, 191, 
+	WDP_AUTO, "trip_history", 380, 191, 
 	WC_VEHICLE_TRIP_HISTORY,WC_VEHICLE_DETAILS,
 	0,
 	_vehicle_trip_history_widgets,

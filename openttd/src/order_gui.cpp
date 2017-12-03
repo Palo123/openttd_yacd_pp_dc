@@ -1757,7 +1757,7 @@ static const NWidgetPart _nested_orders_train_widgets[] = {
 };
 
 static WindowDesc _orders_train_desc(
-	WDP_AUTO, 384, 100,
+	WDP_AUTO, "view_vehicle_orders_train", 384, 100,
 	WC_VEHICLE_ORDERS, WC_VEHICLE_VIEW,
 	WDF_CONSTRUCTION,
 	_nested_orders_train_widgets, lengthof(_nested_orders_train_widgets)
@@ -1828,7 +1828,7 @@ static const NWidgetPart _nested_orders_widgets[] = {
 };
 
 static WindowDesc _orders_desc(
-	WDP_AUTO, 384, 100,
+	WDP_AUTO, "view_vehicle_orders", 384, 100,
 	WC_VEHICLE_ORDERS, WC_VEHICLE_VIEW,
 	WDF_CONSTRUCTION,
 	_nested_orders_widgets, lengthof(_nested_orders_widgets)
@@ -1853,7 +1853,7 @@ static const NWidgetPart _nested_other_orders_widgets[] = {
 };
 
 static WindowDesc _other_orders_desc(
-	WDP_AUTO, 384, 86,
+	WDP_AUTO, "view_vehicle_orders_competitor", 384, 86,
 	WC_VEHICLE_ORDERS, WC_VEHICLE_VIEW,
 	WDF_CONSTRUCTION,
 	_nested_other_orders_widgets, lengthof(_nested_other_orders_widgets)

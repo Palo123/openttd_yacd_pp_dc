@@ -729,7 +729,7 @@ static const NWidgetPart _nested_company_stations_widgets[] = {
 };
 
 static WindowDesc _company_stations_desc(
-	WDP_AUTO, 358, 162,
+	WDP_AUTO, "list_stations", 358, 162,
 	WC_STATION_LIST, WC_NONE,
 	0,
 	_nested_company_stations_widgets, lengthof(_nested_company_stations_widgets)
@@ -1728,7 +1728,7 @@ StringID StationViewWindow::last_cargo_from_str     = STR_STATION_VIEW_WAITING_V
 StringID StationViewWindow::last_cargo_from_tooltip = STR_STATION_VIEW_WAITING_VIA_TOOLTIP;
 
 static WindowDesc _station_view_desc(
-	WDP_AUTO, 249, 110,
+	WDP_AUTO, "view_station", 249, 110,
 	WC_STATION_VIEW, WC_NONE,
 	0,
 	_nested_station_view_widgets, lengthof(_nested_station_view_widgets)
@@ -1979,7 +1979,7 @@ protected:
 };
 
 static WindowDesc _select_station_desc(
-	WDP_AUTO, 200, 180,
+	WDP_AUTO, "build_station_join", 200, 180,
 	WC_SELECT_STATION, WC_NONE,
 	WDF_CONSTRUCTION,
 	_nested_select_station_widgets, lengthof(_nested_select_station_widgets)

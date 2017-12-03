@@ -86,7 +86,7 @@ static const NWidgetPart _widgets[] = {
 };
 
 static WindowDesc _template_create_window_desc(
-	WDP_AUTO, 456, 100,
+	WDP_AUTO, "template_create", 456, 100,
 	WC_CREATE_TEMPLATE, WC_NONE,					// TODO change wc_replace_vehicle
 	WDF_CONSTRUCTION,
 	_widgets, lengthof(_widgets)

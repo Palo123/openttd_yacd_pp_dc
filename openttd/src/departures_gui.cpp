@@ -65,7 +65,7 @@ static const NWidgetPart _nested_departures_list[] = {
 };
 
 static WindowDesc _departures_desc(
-	WDP_AUTO, 260, 246,
+	WDP_AUTO, "departures", 260, 246,
 	WC_DEPARTURES_BOARD, WC_NONE,
 	0,
 	_nested_departures_list, lengthof(_nested_departures_list)

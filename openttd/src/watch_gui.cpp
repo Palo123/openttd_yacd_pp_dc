@@ -138,7 +138,7 @@ static const NWidgetPart _nested_watch_company_widgets[] = {
  * Watch Company Window Descriptor
  */
 static WindowDesc _watch_company_desc(
-	WDP_AUTO, 300, 257,
+	WDP_AUTO, "watch_company", 300, 257,
 	WC_WATCH_COMPANY, WC_NONE,
 	0,
 	_nested_watch_company_widgets, lengthof( _nested_watch_company_widgets )

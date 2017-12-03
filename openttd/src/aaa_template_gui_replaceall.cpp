@@ -104,7 +104,7 @@ static const NWidgetPart widgets[] = {
 };
 
 static WindowDesc _template_replace_replaceall_desc(
-	WDP_AUTO, 400, 200,
+	WDP_AUTO, "template_replaceall", 400, 200,
 	WC_TEMPLATEGUI_RPLALL, WC_NONE,
 	WDF_CONSTRUCTION,
 	widgets, lengthof(widgets)

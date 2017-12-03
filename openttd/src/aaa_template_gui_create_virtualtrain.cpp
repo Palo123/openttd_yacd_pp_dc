@@ -822,7 +822,7 @@ struct BuildVirtualTrainWindow : Window {
 };
 
 static WindowDesc _build_vehicle_desc(
-	WDP_AUTO, 240, 268,
+	WDP_AUTO, "template_virtual", 240, 268,
 	WC_BUILD_VIRTUAL_TRAIN, WC_NONE,
 	WDF_CONSTRUCTION,
 	_nested_build_vehicle_widgets, lengthof(_nested_build_vehicle_widgets)
