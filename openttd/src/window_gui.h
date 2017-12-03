@@ -182,6 +182,8 @@ struct WindowDesc : ZeroedMemoryAllocator {
 	const NWidgetPart *nwid_parts; ///< Nested widget parts describing the window.
 	int16 nwid_length;             ///< Length of the #nwid_parts array.
 
+	bool pref_sticky;              ///< Preferred stickyness.
+
 	static void LoadFromConfig();
 	static void SaveToConfig();
 };
@@ -516,6 +518,8 @@ public:
 	 * @note #nested_root and/or #nested_array (normally accessed via #GetWidget()) may not exist during this call.
 	 */
 	virtual void OnInit() { }
+
+	virtual void ApplyDefaults();
 
 	/**
 	 * Compute the initial position of the window.
