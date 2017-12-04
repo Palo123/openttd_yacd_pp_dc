@@ -4316,8 +4316,10 @@ uint UpdateStationWaiting(Station *st, CargoID type, uint amount, SourceType sou
 	/* No new "real" cargo item yet. */
 	if (amount == 0) return 0;
 
-	ge.cargo.Append(new CargoPacket(st->index, st->xy, amount, source_type, source_id, dest_tile, dest_type, dest_id, next_hop, next_unload, flags));
-
+	/*ge.cargo.Append(new CargoPacket(st->index, st->xy, amount, source_type, source_id, dest_tile, dest_type, dest_id, next_hop, next_unload, flags));
+*/
+	ge.cargo.Append(new CargoPacket(st->index, st->xy, amount, source_type, source_id, dest_tile, dest_type, dest_id, next_hop, next_unload, flags), next_hop);
+	
 	if (!ge.HasRating()) {
 		InvalidateWindowData(WC_STATION_LIST, st->index);
 		SetBit(ge.acceptance_pickup, GoodsEntry::GES_PICKUP);

@@ -12,6 +12,7 @@
 #include "stdafx.h"
 #include "economy_base.h"
 #include "cargoaction.h"
+#include "station_base.h"
 
 /**
  * Decides if a packet needs to be split.
@@ -153,7 +154,7 @@ bool CargoReturn::operator()(CargoPacket *cp)
 	assert(cp_new->Count() <= this->destination->reserved_count);
 	this->source->RemoveFromMeta(cp_new, VehicleCargoList::MTA_LOAD, cp_new->Count());
 	this->destination->reserved_count -= cp_new->Count();
-	this->destination->Append(cp_new);
+	this->destination->Append(cp_new, this->next);
 	return cp_new == cp;
 }
 
@@ -167,8 +168,8 @@ bool CargoTransfer::operator()(CargoPacket *cp)
 	CargoPacket *cp_new = this->Preprocess(cp);
 	if (cp_new == NULL) return false;
 	this->source->RemoveFromMeta(cp_new, VehicleCargoList::MTA_TRANSFER, cp_new->Count());
-	cp_new->AddFeederShare(this->payment->PayTransfer(cp_new, cp_new->Count()));
-	this->destination->Append(cp_new);
+	/* No transfer credits here as they were already granted during Stage(). */
+	this->destination->Append(cp_new, cp_new->NextHop());
 	return cp_new == cp;
 }
 

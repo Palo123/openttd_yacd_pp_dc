@@ -10,7 +10,9 @@
 /** @file cargopacket.cpp Implementation of the cargo packets. */
 
 #include "stdafx.h"
+#include "station_base.h"
 #include "core/pool_func.hpp"
+#include "core/random_func.hpp"
 #include "economy_base.h"
 #include "cargoaction.h"
 #include "station_base.h"
@@ -192,8 +194,8 @@ void CargoPacket::Reduce(uint count)
 /**
  * Destroy the cargolist ("frees" all cargo packets).
  */
-template <class Tinst>
-CargoList<Tinst>::~CargoList()
+template <class Tinst, class Tcont>
+CargoList<Tinst, Tcont>::~CargoList()
 {
 	for (Iterator it(this->packets.begin()); it != this->packets.end(); ++it) {
 		delete *it;
@@ -204,8 +206,8 @@ CargoList<Tinst>::~CargoList()
  * Empty the cargo list, but don't free the cargo packets;
  * the cargo packets are cleaned by CargoPacket's CleanPool.
  */
-template <class Tinst>
-void CargoList<Tinst>::OnCleanPool()
+template <class Tinst, class Tcont>
+void CargoList<Tinst, Tcont>::OnCleanPool()
 {
 	this->packets.clear();
 }
@@ -216,8 +218,8 @@ void CargoList<Tinst>::OnCleanPool()
  * @param cp Packet to be removed from cache.
  * @param count Amount of cargo from the given packet to be removed.
  */
-template <class Tinst>
-void CargoList<Tinst>::RemoveFromCache(const CargoPacket *cp, uint count)
+template <class Tinst, class Tcont>
+void CargoList<Tinst, Tcont>::RemoveFromCache(const CargoPacket *cp, uint count)
 {
 	assert(count <= cp->count);
 	this->count                 -= count;
@@ -229,83 +231,16 @@ void CargoList<Tinst>::RemoveFromCache(const CargoPacket *cp, uint count)
  * Increases count and days_in_transit.
  * @param cp New packet to be inserted.
  */
-template <class Tinst>
-void CargoList<Tinst>::AddToCache(const CargoPacket *cp)
+template <class Tinst, class Tcont>
+void CargoList<Tinst, Tcont>::AddToCache(const CargoPacket *cp)
 {
 	this->count                 += cp->count;
 	this->cargo_days_in_transit += cp->days_in_transit * cp->count;
 }
 
-/**
- * Truncates the cargo in this list to the given amount. It leaves the
- * first cargo entities and removes max_move from the back of the list.
- * @param max_move Maximum amount of entities to be removed from the list.
- * @return Amount of entities actually moved.
- */
-template <class Tinst>
-uint CargoList<Tinst>::Truncate(uint max_move)
-{
-	max_move = min(this->count, max_move);
-	this->PopCargo(CargoRemoval<Tinst>(static_cast<Tinst *>(this), max_move));
-	return max_move;
-}
-
-/**
- * Shifts cargo from the front of the packet list and applies some action to it.
- * @tparam Taction Action class or function to be used. It should define
- *                 "bool operator()(CargoPacket *)". If true is returned the
- *                 cargo packet will be removed from the list. Otherwise it
- *                 will be kept and the loop will be aborted.
- * @param action Action instance to be applied.
- */
-template <class Tinst>
-template <class Taction>
-void CargoList<Tinst>::ShiftCargo(Taction action)
-{
-	Iterator it(this->packets.begin());
-	while (it != this->packets.end() && action.MaxMove() > 0) {
-		CargoPacket *cp = *it;
-		if (action(cp)) {
-			it = this->packets.erase(it);
-		} else {
-			break;
-		}
-	}
-}
-
-/**
- * Pops cargo from the back of the packet list and applies some action to it.
- * @tparam Taction Action class or function to be used. It should define
- *                 "bool operator()(CargoPacket *)". If true is returned the
- *                 cargo packet will be removed from the list. Otherwise it
- *                 will be kept and the loop will be aborted.
- * @param action Action instance to be applied.
- */
-template <class Tinst>
-template <class Taction>
-void CargoList<Tinst>::PopCargo(Taction action)
-{
-	if (this->packets.empty()) return;
-	Iterator it(--(this->packets.end()));
-	Iterator begin(this->packets.begin());
-	while (action.MaxMove() > 0) {
-		CargoPacket *cp = *it;
-		if (action(cp)) {
-			if (it != begin) {
-				this->packets.erase(it--);
-			} else {
-				this->packets.erase(it);
-				break;
-			}
-		} else {
-			break;
-		}
-	}
-}
-
 /** Invalidates the cached data and rebuilds it. */
-template <class Tinst>
-void CargoList<Tinst>::InvalidateCache()
+template <class Tinst, class Tcont>
+void CargoList<Tinst, Tcont>::InvalidateCache()
 {
 	this->count = 0;
 	this->cargo_days_in_transit = 0;
@@ -322,11 +257,11 @@ void CargoList<Tinst>::InvalidateCache()
  * @param cp Packet to be eliminated.
  * @return If the packets could be merged.
  */
-template <class Tinst>
-/* static */ bool CargoList<Tinst>::TryMerge(CargoPacket *icp, CargoPacket *cp)
+template <class Tinst, class Tcont>
+/* static */ bool CargoList<Tinst, Tcont>::TryMerge(CargoPacket *icp, CargoPacket *cp)
 {
 	if (Tinst::AreMergable(icp, cp) &&
-				icp->count + cp->count <= CargoPacket::MAX_COUNT) {
+			icp->count + cp->count <= CargoPacket::MAX_COUNT) {
 		icp->Merge(cp);
 		return true;
 	} else {
@@ -379,6 +314,57 @@ void VehicleCargoList::Append(CargoPacket *cp, MoveToAction action)
 	}
 
 	NOT_REACHED();
+}
+
+/**
+ * Shifts cargo from the front of the packet list and applies some action to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ */
+template<class Taction>
+void VehicleCargoList::ShiftCargo(Taction action)
+{
+	Iterator it(this->packets.begin());
+	while (it != this->packets.end() && action.MaxMove() > 0) {
+		CargoPacket *cp = *it;
+		if (action(cp)) {
+			it = this->packets.erase(it);
+		} else {
+			break;
+		}
+	}
+}
+
+/**
+ * Pops cargo from the back of the packet list and applies some action to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ */
+template<class Taction>
+void VehicleCargoList::PopCargo(Taction action)
+{
+	if (this->packets.empty()) return;
+	Iterator it(--(this->packets.end()));
+	Iterator begin(this->packets.begin());
+	while (action.MaxMove() > 0) {
+		CargoPacket *cp = *it;
+		if (action(cp)) {
+			if (it != begin) {
+				this->packets.erase(it--);
+			} else {
+				this->packets.erase(it);
+				break;
+			}
+		} else {
+			break;
+		}
+	}
 }
 
 /**
@@ -443,6 +429,23 @@ void VehicleCargoList::AgeCargo()
 
 		cp->days_in_transit++;
 		this->cargo_days_in_transit += cp->count;
+	}
+}
+
+/**
+ * Sets loaded_at_xy to the current station for all cargo to be transfered.
+ * This is done when stopping or skipping while the vehicle is unloading. In
+ * that case the vehicle will get part of its transfer credits early and it may
+ * get more transfer credits than it's entitled to.
+ * @param xy New loaded_at_xy for the cargo.
+ */
+void VehicleCargoList::SetTransferLoadPlace(TileIndex xy)
+{
+	uint sum = 0;
+	for (Iterator it = this->packets.begin(); sum < this->action_counts[MTA_TRANSFER]; ++it) {
+		CargoPacket *cp = *it;
+		cp->loaded_at_xy = xy;
+		sum += cp->count;
 	}
 }
 
@@ -573,10 +576,10 @@ uint VehicleCargoList::Reassign(uint max_move, MoveToAction from, MoveToAction t
  * @param max_move Maximum amount of cargo to move.
  * @return Amount of cargo actually returned.
  */
-uint VehicleCargoList::Return(uint max_move, StationCargoList *dest)
+uint VehicleCargoList::Return(uint max_move, StationCargoList *dest, OrderID next)
 {
 	max_move = min(this->action_counts[MTA_LOAD], max_move);
-	this->PopCargo(CargoReturn(this, dest, max_move));
+	this->PopCargo(CargoReturn(this, dest, max_move, next));
 	return max_move;
 }
 
@@ -606,7 +609,7 @@ uint VehicleCargoList::Unload(uint max_move, StationCargoList *dest, CargoPaymen
 	uint moved = 0;
 	if (this->action_counts[MTA_TRANSFER] > 0) {
 		uint move = min(this->action_counts[MTA_TRANSFER], max_move);
-		this->ShiftCargo(CargoTransfer(this, dest, move, payment));
+		this->ShiftCargo(CargoTransfer(this, dest, move));
 		moved += move;
 	}
 	if (this->action_counts[MTA_TRANSFER] == 0 && this->action_counts[MTA_DELIVER] > 0 && moved < max_move) {
@@ -623,6 +626,19 @@ void VehicleCargoList::InvalidateNextStation()
 	for (VehicleCargoList::ConstIterator it = this->packets.begin(); it != this->packets.end(); ++it) {
 		(*it)->next_station = INVALID_STATION;
 	}
+}
+
+/**
+ * Truncates the cargo in this list to the given amount. It leaves the
+ * first cargo entities and removes max_move from the back of the list.
+ * @param max_move Maximum amount of entities to be removed from the list.
+ * @return Amount of entities actually moved.
+ */
+uint VehicleCargoList::Truncate(uint max_move)
+{
+	max_move = min(this->count, max_move);
+	this->PopCargo(CargoRemoval<VehicleCargoList>(this, max_move));
+	return max_move;
 }
 
 /*
@@ -783,17 +799,104 @@ void StationCargoList::UpdateCargoNextHop(Station *st, CargoID cid)
  * @param cp Cargo packet to add.
  * @pre cp != NULL
  */
-void StationCargoList::Append(CargoPacket *cp)
+void StationCargoList::Append(CargoPacket *cp, OrderID next)
 {
 	assert(cp != NULL);
 	this->AddToCache(cp);
 
-	for (List::reverse_iterator it(this->packets.rbegin()); it != this->packets.rend(); it++) {
+	StationCargoPacketMap::List &list = this->packets[next];
+	for (StationCargoPacketMap::List::reverse_iterator it(list.rbegin()); it != list.rend(); it++) {
 		if (StationCargoList::TryMerge(*it, cp)) return;
 	}
 
 	/* The packet could not be merged with another one */
-	this->packets.push_back(cp);
+	list.push_back(cp);
+}
+
+/**
+ * Shifts cargo from the front of the packet list for a specific station and
+ * applies some action to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ * @param next Next hop the cargo wants to visit.
+ * @return True if all packets with the given next hop have been removed,
+ *         False otherwise.
+ */
+template <class Taction>
+bool StationCargoList::ShiftCargo(Taction &action, OrderID next)
+{
+	std::pair<Iterator, Iterator> range(this->packets.equal_range(next));
+	for (Iterator it(range.first); it != range.second && it.GetKey() == next;) {
+		if (action.MaxMove() == 0) return false;
+		CargoPacket *cp = *it;
+		if (action(cp)) {
+			it = this->packets.erase(it);
+		} else {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Shifts cargo from the front of the packet list for a specific station and
+ * and optional also from the list for "any station", then applies some action
+ * to it.
+ * @tparam Taction Action class or function to be used. It should define
+ *                 "bool operator()(CargoPacket *)". If true is returned the
+ *                 cargo packet will be removed from the list. Otherwise it
+ *                 will be kept and the loop will be aborted.
+ * @param action Action instance to be applied.
+ * @param next Next hop the cargo wants to visit.
+ * @param include_invalid If cargo from the INVALID_STATION list should be
+ *                        used if necessary.
+ * @return Amount of cargo actually moved.
+ */
+template <class Taction>
+uint StationCargoList::ShiftCargo(Taction action, OrderID next, bool include_invalid)
+{
+	uint max_move = action.MaxMove();
+	if (this->ShiftCargo(action, next) && include_invalid && action.MaxMove() > 0) {
+		this->ShiftCargo(action, INVALID_STATION);
+	}
+	return max_move - action.MaxMove();
+}
+
+/**
+ * Truncates where each destination loses roughly the same percentage of its
+ * cargo. This is done by randomizing the selection of packets to be removed.
+ * @param max_move Maximum amount of cargo to remove.
+ * @return Amount of cargo actually moved.
+ */
+uint StationCargoList::Truncate(uint max_move)
+{
+	max_move = min(max_move, this->count);
+	uint prev_count = this->count;
+	uint moved = 0;
+	while (max_move > moved) {
+		for (Iterator it(this->packets.begin()); it != this->packets.end();) {
+			if (prev_count > max_move && RandomRange(prev_count) < prev_count - max_move) {
+				++it;
+				continue;
+			}
+			CargoPacket *cp = *it;
+			uint diff = max_move - moved;
+			if (cp->count > diff) {
+				this->RemoveFromCache(cp, diff);
+				cp->Reduce(diff);
+				return moved + diff;
+			} else {
+				it = this->packets.erase(it);
+				moved += cp->count;
+				this->RemoveFromCache(cp, cp->count);
+				delete cp;
+			}
+		}
+	}
+	return moved;
 }
 
 /**
@@ -803,10 +906,10 @@ void StationCargoList::Append(CargoPacket *cp)
  * @param load_place Tile index of the current station.
  * @return Amount of cargo actually reserved.
  */
-uint StationCargoList::Reserve(uint max_move, VehicleCargoList *dest, TileIndex load_place)
+uint StationCargoList::Reserve(uint max_move, VehicleCargoList *dest, TileIndex load_place, OrderID next)
 {
 	max_move = min(this->count, max_move);
-	this->ShiftCargo(CargoReservation(this, dest, max_move, load_place));
+	this->ShiftCargo(CargoReservation(this, dest, max_move, load_place), next, true);
 	return max_move;
 }
 
@@ -817,21 +920,21 @@ uint StationCargoList::Reserve(uint max_move, VehicleCargoList *dest, TileIndex 
  * @param max_move Amount of cargo to load.
  * @return Amount of cargo actually loaded.
  */
-uint StationCargoList::Load(uint max_move, VehicleCargoList *dest, TileIndex load_place)
+uint StationCargoList::Load(uint max_move, VehicleCargoList *dest, TileIndex load_place, OrderID next_station)
 {
 	uint move = min(dest->ActionCount(VehicleCargoList::MTA_LOAD), max_move);
 	if (move > 0) {
 		this->reserved_count -= move;
 		dest->Reassign(move, VehicleCargoList::MTA_LOAD, VehicleCargoList::MTA_KEEP);
+		return move;
 	} else {
 		move = min(this->count, max_move);
-		this->ShiftCargo(CargoLoad(this, dest, move, load_place));
+		return this->ShiftCargo(CargoLoad(this, dest, move, load_place), next_station, true);
 	}
-	return move;
 }
 
 /*
  * We have to instantiate everything we want to be usable.
  */
-template class CargoList<VehicleCargoList>;
-template class CargoList<StationCargoList>;
+template class CargoList<VehicleCargoList, CargoPacketList>;
+template class CargoList<StationCargoList, StationCargoPacketMap>;

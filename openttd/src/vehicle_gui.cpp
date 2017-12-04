@@ -2972,7 +2972,7 @@ int GetVehicleWidth(Vehicle *v, EngineImageType image_type)
  */
 void AddVehicleCargoDestSummary(const Vehicle *v, CargoDestSummary *sum)
 {
-	const VehicleCargoList::List *packets = v->cargo.Packets();
+	const CargoPacketList *packets = v->cargo.Packets();
 	for (VehicleCargoList::ConstIterator it = packets->begin(); it != packets->end(); ++it) {
 		const CargoPacket *cp = *it;
 

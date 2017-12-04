@@ -71,11 +71,9 @@ public:
 
 /** Action of transferring cargo from a vehicle to a station. */
 class CargoTransfer : public CargoMovement<VehicleCargoList, StationCargoList> {
-protected:
-	CargoPayment *payment;  ///< Payment object for registering transfer credits.
 public:
-	CargoTransfer(VehicleCargoList *source, StationCargoList *destination, uint max_move, CargoPayment *payment) :
-			CargoMovement<VehicleCargoList, StationCargoList>(source, destination, max_move), payment(payment) {}
+	CargoTransfer(VehicleCargoList *source, StationCargoList *destination, uint max_move) :
+			CargoMovement<VehicleCargoList, StationCargoList>(source, destination, max_move) {}
 	bool operator()(CargoPacket *cp);
 };
 
@@ -99,9 +97,10 @@ public:
 
 /** Action of returning previously reserved cargo from the vehicle to the station. */
 class CargoReturn: public CargoMovement<VehicleCargoList, StationCargoList> {
+	StationID next;
 public:
-	CargoReturn(VehicleCargoList *source, StationCargoList *destination, uint max_move) :
-			CargoMovement<VehicleCargoList, StationCargoList>(source, destination, max_move) {}
+	CargoReturn(VehicleCargoList *source, StationCargoList *destination, uint max_move, StationID next) :
+			CargoMovement<VehicleCargoList, StationCargoList>(source, destination, max_move), next(next) {}
 	bool operator()(CargoPacket *cp);
 };
 
