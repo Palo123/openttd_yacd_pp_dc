@@ -334,6 +334,7 @@ Vehicle::Vehicle(VehicleType type)
 	this->fill_percent_te_id = INVALID_TE_ID;
 	this->first              = this;
 	this->colourmap          = PAL_NONE;
+	this->last_station_visited = INVALID_STATION;
 	this->last_station_loaded = INVALID_STATION;
 	this->cargo_age_counter  = 1;
 	this->current_order.index = INVALID_ORDER;
