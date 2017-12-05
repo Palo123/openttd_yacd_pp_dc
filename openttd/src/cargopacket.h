@@ -478,7 +478,7 @@ public:
 	 * applicable), return value is amount of cargo actually moved. */
 
 	uint Reassign(uint max_move, MoveToAction from, MoveToAction to);
-	uint Return(uint max_move, StationCargoList *dest, StationID next_station);
+	uint Return(uint max_move, StationCargoList *dest, OrderID next_station);
 	uint Unload(uint max_move, StationCargoList *dest, CargoPayment *payment);
 	uint Shift(uint max_move, VehicleCargoList *dest);
 	uint Truncate(uint max_move = UINT_MAX);
@@ -549,19 +549,19 @@ public:
 	static void InvalidateAllFrom(SourceType src_type, SourceID src);
 	
 	template<class Taction>
-	bool ShiftCargo(Taction &action, StationID next);
+	bool ShiftCargo(Taction &action, OrderID next);
 
 	template<class Taction>
-	uint ShiftCargo(Taction action, StationID next, bool include_invalid);
+	uint ShiftCargo(Taction action, OrderID next, bool include_invalid);
 	
-	void Append(CargoPacket *cp, StationID next);
+	void Append(CargoPacket *cp, OrderID next);
 
 	/**
 	 * Check for cargo headed for a specific station.
 	 * @param next Station the cargo is headed for.
 	 * @return If there is any cargo for that station.
 	 */
-	inline bool HasCargoFor(StationID next) const
+	inline bool HasCargoFor(OrderID next) const
 	{
 		return this->packets.find(next) != this->packets.end();
 	}
@@ -608,8 +608,8 @@ public:
 	 * amount of cargo to be moved. Second parameter is destination (if
 	 * applicable), return value is amount of cargo actually moved. */
 
-	uint Reserve(uint max_move, VehicleCargoList *dest, TileIndex load_place, StationID next);
-	uint Load(uint max_move, VehicleCargoList *dest, TileIndex load_place, StationID next);
+	uint Reserve(uint max_move, VehicleCargoList *dest, TileIndex load_place, OrderID next);
+	uint Load(uint max_move, VehicleCargoList *dest, TileIndex load_place, OrderID next);
 	uint Truncate(uint max_move = UINT_MAX);
 
 	void InvalidateCache();
