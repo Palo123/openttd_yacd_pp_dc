@@ -60,7 +60,8 @@ static const SpriteID SPR_OPENTTD_BASE   = 4896;
 //static const uint16 OPENTTD_SPRITE_COUNT = 187;
 //static const uint16 OPENTTD_SPRITE_COUNT = 193;
 //static const uint16 OPENTTD_SPRITE_COUNT = 194;
-static const uint16 OPENTTD_SPRITE_COUNT = 174;
+//static const uint16 OPENTTD_SPRITE_COUNT = 174;
+static const uint16 OPENTTD_SPRITE_COUNT = 193;
 
 /* Halftile-selection sprites */
 static const SpriteID SPR_HALFTILE_SELECTION_FLAT = SPR_OPENTTD_BASE;

@@ -1595,8 +1595,6 @@ static void LoadUnloadVehicle(Vehicle *front)
 			}
 
 			if (new_cid == CT_AUTO_REFIT) {
-				/* Get refittable cargo type with the most waiting cargo. */
-				int amount = 0;
 				CargoID cid;
 				new_cid = v_start->cargo_type;
 				FOR_EACH_SET_CARGO_ID(cid, refit_mask) {
