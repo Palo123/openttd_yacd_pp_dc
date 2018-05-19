@@ -81,6 +81,7 @@ static const byte RV_OVERTAKE_TIMEOUT = 35;
 
 void RoadVehUpdateCache(RoadVehicle *v, bool same_length = false);
 void GetRoadVehSpriteSize(EngineID engine, uint &width, uint &height, int &xoffs, int &yoffs, EngineImageType image_type);
+void CalcMaxRoadVehSpeed(RoadVehicle *v);
 
 /**
  * Buses, trucks and trams belong to this class.
@@ -97,11 +98,7 @@ struct RoadVehicle FINAL : public GroundVehicle<RoadVehicle, VEH_ROAD> {
 	RoadType roadtype;
 	RoadTypes compatible_roadtypes;
 
-	/* used for limiting speed out/in cities */
-	TileIndex last_tile;     ///< Last tile where vehicle was
-	bool another_tile;       ///< Vehicle entered another tile?
-	uint16 limit_speed;      ///< Limitation of speed
-	uint16 limit_speed_pass; ///< Hack solution, sorry.
+	uint16 limit_speed;      ///< limiting speed out/in cities
 
 	/** We don't want GCC to zero our struct! It already is zeroed and has an index! */
 	RoadVehicle() : GroundVehicleBase() {}

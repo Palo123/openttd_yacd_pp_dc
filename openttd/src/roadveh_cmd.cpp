@@ -454,10 +454,9 @@ inline int RoadVehicle::GetCurrentMaxSpeed() const
 			max_speed = min(max_speed, GetBridgeSpec(GetBridgeType(u->tile))->speed * 2);
 		}
 	}
-	if ( (this->limit_speed_pass) > 2 )
-	    {
-		max_speed = min(max_speed,this->limit_speed_pass);
-	    }
+	if ( (this->limit_speed) > 2 ) {
+		max_speed = min(max_speed,this->limit_speed);
+	}
 	return min(max_speed, this->current_order.max_speed * 2);
 	;
 }
@@ -1117,110 +1116,48 @@ static bool CanBuildTramTrackOnTile(CompanyID c, TileIndex t, RoadBits r)
  *
  * @return max speed which car can go at it's location
  */
-uint16 CalcMaxRoadVehSpeed(RoadVehicle *v) {
-       //if (v->u.road.another_tile) {
-       if (v->another_tile) {
-               /* start - another tile */
+void CalcMaxRoadVehSpeed(RoadVehicle *v) {
+	bool in_town = false;
+	bool one_way = false;
+	HouseZonesBits grp = HZB_TOWN_EDGE;
+	
+	v->limit_speed = v->vcache.cached_max_speed;
 
-               /* not another tile anymore */
-               //v->u.road.another_tile = false;
-               v->another_tile = false;
+	if (_settings_game.vehicle.limit_vehicle_speed_in_towns) {
+		Town *t;
+		t = ClosestTownFromTile(v->tile, (uint)-1);
+		grp = GetTownRadiusGroup(t, v->tile);
 
-               bool in_town = false;
-               bool one_way = false;
+		if ( grp >= HZB_TOWN_OUTSKIRT) {
+			in_town = true;
+		}
+	}
 
-               HouseZonesBits grp = HZB_TOWN_EDGE;
+	if (IsTileType(v->tile, MP_ROAD)
+		   && (IsNormalRoadTile(v->tile))) {
+		one_way = !(GetDisallowedRoadDirections(v->tile) == DRD_NONE);
+	}
 
-               if (_settings_game.vehicle.limit_vehicle_speed_in_towns) {
-                       Town *t;
-                       t = ClosestTownFromTile(v->tile, (uint)-1);
-                       grp = GetTownRadiusGroup(t, v->tile);
+	if (in_town) {
+		if (one_way) {
+			v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_one_way * 2);
+		} else {
+			v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_two_way * 2);
+		}
+	} else {
+		if (_settings_game.vehicle.limit_vehicle_speed_outside_towns) {
+			if (one_way) {
+				v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_one_way * 2);
+			} else {
+				v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_two_way * 2);
+			}
+		}
+	}
 
-                       if ( grp >= HZB_TOWN_OUTSKIRT) {
-                               in_town = true;
-                       }
-               }
-
-               if ( IsTileType(v->tile, MP_ROAD)
-                       && (IsNormalRoadTile(v->tile))
-                       && _settings_game.vehicle.max_veh_speed_in_towns_one_way)
-               {
-                       one_way = !(GetDisallowedRoadDirections(v->tile) == DRD_NONE);
-               }
-
-               if ( in_town && _settings_game.vehicle.limit_vehicle_speed_in_towns) {
-                       /* start - in city */
-
-                       if (one_way && _settings_game.vehicle.max_veh_speed_in_towns_one_way) {
-                               /* start - one-way road */
-                               /* check, that vehicle will don't go faster than it's max */
-                               if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_in_towns_one_way * 2) ) {
-                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_one_way * 2);
-
-                                       if(v->limit_speed) {
-                                               return v->limit_speed;
-                                       }
-                               }
-                       } else if (_settings_game.vehicle.max_veh_speed_in_towns_two_way) {
-                               /* start - two-way road */
-                               /* check, that vehicle will don't go faster than it's max */
-                               if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_in_towns_two_way * 2) ) {
-                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_in_towns_two_way * 2);
-
-                                       if (v->limit_speed) {
-                                               return v->limit_speed;
-                                       }
-                               }
-                       }
-
-                       /* end - in city*/
-               } else {
-                       /* start - outside city */
-
-                       if (_settings_game.vehicle.limit_vehicle_speed_outside_towns) {
-                               /* one-way or two-way road */
-                               if (one_way && _settings_game.vehicle.max_veh_speed_out_towns_one_way) {
-                                       /* start - one-way road */
-                                       /* check, that vehicle will don't go faster than it's max */
-                                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_out_towns_one_way * 2) ) {
-                                               v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_one_way * 2);
-
-                                               if (v->limit_speed) {
-                                                       return v->limit_speed;
-                                               }
-                                       }
-                               } else if ( _settings_game.vehicle.max_veh_speed_out_towns_two_way ) {
-                                       /* start - two-way road */
-                                       /* check, that vehicle will don't go faster than it's max */
-                                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_out_towns_two_way * 2) ) {
-                                               v->limit_speed = (_settings_game.vehicle.max_veh_speed_out_towns_two_way * 2);
-
-                                               if (v->limit_speed) {
-                                                       return v->limit_speed;
-                                               }
-                                       }
-                               }
-                       }
-                       /* end - outside city */
-               }
-
-               /* end - another tile */
-
-               if (v->state == RVSB_WORMHOLE && _settings_game.vehicle.limit_vehicle_speed_tunnel_bridge) {
-                       /* start - tunnels and bridges */
-                       /* check, that vehicle will don't go faster than it's max */
-                       if ( v->vcache.cached_max_speed >= (_settings_game.vehicle.max_veh_speed_tunnel_bridge * 2) ) {
-                                       v->limit_speed = (_settings_game.vehicle.max_veh_speed_tunnel_bridge * 2);
-                                       if (v->limit_speed) {
-                                               return v->limit_speed;
-                                       }
-                       }
-               } else if (v->limit_speed && v->state != RVSB_WORMHOLE) {
-                       return v->limit_speed;
-               }
-       }
-       v->limit_speed = v->vcache.cached_max_speed;
-       return v->limit_speed;
+   if (v->state == RVSB_WORMHOLE && _settings_game.vehicle.limit_vehicle_speed_tunnel_bridge) {
+		v->limit_speed = (_settings_game.vehicle.max_veh_speed_tunnel_bridge * 2);
+	}
+	
 }
 
 static bool IndividualRoadVehicleController(RoadVehicle *v, const RoadVehicle *prev)
@@ -1361,12 +1298,6 @@ again:
 		int x = TileX(tile) * TILE_SIZE + rdp[start_frame].x;
 		int y = TileY(tile) * TILE_SIZE + rdp[start_frame].y;
 
-		if (v->tile != v->last_tile) {
-			v->another_tile = true;
-			v->last_tile = v->tile;
-		}
-	v->limit_speed_pass = CalcMaxRoadVehSpeed(v);
-
 		Direction new_dir = RoadVehGetSlidingDirection(v, x, y);
 		if (v->IsFrontEngine()) {
 			Vehicle *u = RoadVehFindCloseTo(v, x, y, new_dir);
@@ -1422,8 +1353,6 @@ again:
 			v->direction = new_dir;
 			if (_settings_game.vehicle.roadveh_acceleration_model == AM_ORIGINAL) v->cur_speed -= v->cur_speed >> 2;
 		}
-//egyik lenyeg
-		v->cur_speed = min(v->cur_speed, CalcMaxRoadVehSpeed(v));
 
 		v->x_pos = x;
 		v->y_pos = y;

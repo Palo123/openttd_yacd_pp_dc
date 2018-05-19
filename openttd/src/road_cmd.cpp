@@ -1786,6 +1786,10 @@ static const byte _roadveh_enter_depot_dir[4] = {
 
 static VehicleEnterTileStatus VehicleEnter_Road(Vehicle *v, TileIndex tile, int x, int y)
 {
+	if (v->type == VEH_ROAD) {
+		RoadVehicle *rv1 = RoadVehicle::From(v);
+		CalcMaxRoadVehSpeed(rv1);
+	}
 	switch (GetRoadTileType(tile)) {
 		case ROAD_TILE_DEPOT: {
 			if (v->type != VEH_ROAD) break;

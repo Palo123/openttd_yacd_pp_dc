@@ -787,6 +787,7 @@ const SaveLoad *GetVehicleDescription(VehicleType vt)
 		     SLE_VAR(RoadVehicle, crashed_ctr,          SLE_UINT16),
 		     SLE_VAR(RoadVehicle, reverse_ctr,          SLE_UINT8),
 
+		 SLE_CONDVAR(RoadVehicle, limit_speed,             SLE_UINT16,                 210, SL_MAX_VERSION),
 		SLE_CONDNULL(2,                                                               6,  68),
 		 SLE_CONDVAR(RoadVehicle, gv_flags,             SLE_UINT16,                 139, SL_MAX_VERSION),
 		SLE_CONDNULL(4,                                                              69, 130),
